@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/error.rs - An error type that encompasses all errors created by Beetle.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +43,21 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
+use std::ffi::NulError;
+use thiserror::Error;
 
-mod color;
-pub use color::*;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("{0}")]
+    Msg(String),
+    #[error("{0}")]
+    StaticMsg(&'static str),
+    #[error("{0}")]
+    Nul(#[from] NulError),
 
-mod error;
-pub use error::*;
-
-mod widget;
-pub use widget::*;
-
-pub mod object;
-
-pub(crate) mod utils;
+    // X11 errors
+    #[error("Unable to open display")]
+    UnableToOpenDisplay,
+    #[error("Expected LGuiObject to be a window")]
+    ExpectedWindow,
+}

@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/object/linux/mod.rs - Re-exports the X11, Wayland, or GTK submodule.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +43,5 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
-
-mod color;
-pub use color::*;
-
-mod error;
-pub use error::*;
-
-mod widget;
-pub use widget::*;
-
-pub mod object;
-
-pub(crate) mod utils;
+mod x11;
+pub use self::x11::*;

@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/widget/kind.rs - This file should define the different kinds of widget types
+ *                      that a Widget can represent.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +44,34 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
+/* ----------------------------------------------------------------------------------
+ * Note: We use numerical encoding to encode information in the enum proper. Here
+ * is the needed information.
+ *
+ * Odd numbers are container types.
+ * Odd numbers divisble by 3 under 16 are windows.
+ */
 
-mod color;
-pub use color::*;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum WidgetType {
+    MainWindow = 3,
+    ChildWindow = 9,
+    DialogWindow = 15,
+    Label = 1,
+    Checkbox = 2,
+}
 
-mod error;
-pub use error::*;
+impl WidgetType {
+    #[inline]
+    pub fn is_window(&self) -> bool {
+        let val = *self as u16;
+        val % 3 == 0 && val < 10
+    }
 
-mod widget;
-pub use widget::*;
-
-pub mod object;
-
-pub(crate) mod utils;
+    #[inline]
+    pub fn is_container(&self) -> bool {
+        let val = *self as u16;
+        val % 2 != 0
+    }
+}

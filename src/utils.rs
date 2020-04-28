@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/utils.rs - Various utility functions, such as conversion of Rust string slices
+ *                to C string pointers.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +44,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
+use std::{ffi::CString, os::raw::c_char};
 
-mod color;
-pub use color::*;
-
-mod error;
-pub use error::*;
-
-mod widget;
-pub use widget::*;
-
-pub mod object;
-
-pub(crate) mod utils;
+#[inline]
+pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
+    Ok(CString::new(val)?.as_ptr() as *mut c_char)
+}

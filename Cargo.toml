@@ -5,6 +5,7 @@ authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+nalgebra = "0.21"
 thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]
@@ -15,5 +16,4 @@ objc = "0.2"
 block = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.8"
-glib = "0.9"
+x11 = "2"

@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/object/mod.rs - Defines the GuiObject trait, which is a platform-specific
+ *                     pointer to a native GUI object.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +44,65 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
+#[cfg(target_os = "linux")]
+mod linux;
 
-mod color;
-pub use color::*;
+use std::{fmt, rc::Rc};
 
-mod error;
-pub use error::*;
+pub trait ApplicationObject: Sized + fmt::Debug {}
 
-mod widget;
-pub use widget::*;
+impl<T: ApplicationObject> ApplicationObject for Rc<T> {}
 
-pub mod object;
+pub trait GuiObject: Sized + fmt::Debug {
+    type AObject: ApplicationObject;
 
-pub(crate) mod utils;
+    fn set_rect(x: u32, y: u32, w: u32, h: u32) -> Result<(), crate::Error>;
+
+    // instantiation methods
+    fn application() -> Result<Self::AObject, crate::Error>;
+    fn main_window(
+        app: &Self::AObject,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        title: &str,
+    ) -> Result<Self, crate::Error>;
+    fn child_window(
+        app: &Self::AObject,
+        parent: &Self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        title: &str,
+    ) -> Result<Self, crate::Error>;
+    fn checkbox(
+        app: &Self::AObject,
+        parent: &Self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        text: &str,
+    ) -> Result<Self, crate::Error>;
+    fn label(
+        app: &Self::AObject,
+        parent: &Self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        text: &str,
+    ) -> Result<Self, crate::Error>;
+}
+
+#[cfg(windows)]
+type _D = win32::WGuiObject;
+#[cfg(target_os = "macos")]
+type _D = macos::MGuiObject;
+#[cfg(target_os = "linux")]
+type _D = linux::LGuiObject;
+
+/// The GUI object loaded for this OS.
+pub type DefaultGuiObject = _D;

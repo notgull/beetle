@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
+ * src/object/linux/x11/label.rs - A sub-object that consists of text.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,18 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
+use super::SubObject;
 
-mod color;
-pub use color::*;
+#[derive(Debug)]
+pub struct Label {
 
-mod error;
-pub use error::*;
-
-mod widget;
-pub use widget::*;
-
-pub mod object;
-
-pub(crate) mod utils;
+}
