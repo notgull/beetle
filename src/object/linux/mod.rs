@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/object/linux/mod.rs - Re-exports the X11, Wayland, or GTK submodule.
+ * src/object/linux/mod.rs - Re-exports the X11 module.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,5 +43,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-mod x11;
-pub use self::x11::*;
+#[path = "x11/mod.rs"]
+mod x11_utils;
+pub use x11_utils::*;

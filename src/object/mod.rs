@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/object/mod.rs - Defines the GuiObject trait, which is a platform-specific
- *                     pointer to a native GUI object.
+ * src/object/mod.rs - Declares the GuiObject trait, which is the root object for all
+ *                     wrappers for native GUI objects.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,65 +44,69 @@
  * ----------------------------------------------------------------------------------
  */
 
+use crate::widget;
+use nalgebra::geometry::{Point2, Point4};
+use std::{
+    boxed::Box,
+    collections::HashMap,
+    fmt,
+    ops::{Deref, DerefMut},
+    ptr,
+};
+
+mod factory;
+pub use factory::*;
+mod label;
+pub use label::*;
+mod textual;
+pub use textual::*;
+mod window;
+pub use window::*;
+
 #[cfg(target_os = "linux")]
 mod linux;
 
-use std::{fmt, rc::Rc};
+pub trait GuiObject: fmt::Debug {
+    /// The boundaries of the object
+    fn bounds(&self) -> Point4<u32>;
+    /// Set the boundaries of the object.
+    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error>;
+    /// Set the object's parent
+    fn set_parent(&mut self, parent: &dyn GuiObject) -> Result<(), crate::Error>;
 
-pub trait ApplicationObject: Sized + fmt::Debug {}
-
-impl<T: ApplicationObject> ApplicationObject for Rc<T> {}
-
-pub trait GuiObject: Sized + fmt::Debug {
-    type AObject: ApplicationObject;
-
-    fn set_rect(x: u32, y: u32, w: u32, h: u32) -> Result<(), crate::Error>;
-
-    // instantiation methods
-    fn application() -> Result<Self::AObject, crate::Error>;
-    fn main_window(
-        app: &Self::AObject,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        title: &str,
-    ) -> Result<Self, crate::Error>;
-    fn child_window(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        title: &str,
-    ) -> Result<Self, crate::Error>;
-    fn checkbox(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        text: &str,
-    ) -> Result<Self, crate::Error>;
-    fn label(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        text: &str,
-    ) -> Result<Self, crate::Error>;
+    /// Gets the interior variable representing the window.
+    #[cfg(target_os = "linux")]
+    #[doc(hidden)]
+    fn get_x11_window(&self) -> Option<x11::xlib::Window>;
+    /// For X11 objects that require re-rendering.
+    ///
+    /// This should be a no-op for native widgets.
+    #[cfg(target_os = "linux")]
+    fn render(
+        &self,
+        display: &ptr::NonNull<x11::xlib::Display>,
+        win: x11::xlib::Window,
+        gc: x11::xlib::GC,
+    ) -> Result<(), crate::Error>;
 }
 
-#[cfg(windows)]
-type _D = win32::WGuiObject;
-#[cfg(target_os = "macos")]
-type _D = macos::MGuiObject;
-#[cfg(target_os = "linux")]
-type _D = linux::LGuiObject;
+pub(crate) mod gui_object {
+    pub use super::{GuiFactoryBase, GuiObject, GuiTextual, LabelBase, MainWindowBase, WindowBase};
+}
 
-/// The GUI object loaded for this OS.
-pub type DefaultGuiObject = _D;
+// object types
+#[cfg(target_os = "linux")]
+type _Label = linux::X11Label;
+pub type Label = _Label;
+
+#[cfg(target_os = "linux")]
+type _MainWindow = linux::X11Window<linux::X11MainWindow>;
+pub type MainWindow = _MainWindow;
+
+#[cfg(target_os = "linux")]
+type _ChildWindow = linux::X11Window<linux::X11ChildWindow>;
+pub type ChildWindow = _ChildWindow;
+
+#[cfg(target_os = "linux")]
+type _GuiFactory = linux::X11Display;
+pub type GuiFactory = _GuiFactory; 

@@ -53,9 +53,13 @@ pub use color::*;
 mod error;
 pub use error::*;
 
-mod widget;
+mod font;
+pub use font::*;
+
+pub mod widget;
 pub use widget::*;
 
 pub mod object;
+pub use object::{Label, MainWindow};
 
 pub(crate) mod utils;

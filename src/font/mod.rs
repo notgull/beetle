@@ -1,6 +1,7 @@
 /* -----------------------------------------------------------------------------------
- * src/utils.rs - Various utility functions, such as conversion of Rust string slices
- *                to C string pointers.
+ * src/font/mod.rs - A simple Font wrapper. Should be able to be created from default.
+ *                   In environments with real internal fonts, the Font object should
+ *                   also act as a safe wrapper for the internal font.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,9 +45,39 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{ffi::CString, os::raw::c_char};
+#[path = "freetype/mod.rs"]
+mod freetype_font;
+pub use freetype_font::FreetypeError;
 
-#[inline]
-pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
-    Ok(CString::new(val)?.as_ptr() as *mut c_char)
+/// The weight of the font.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FontWeight {
+    /// Use the default font weight.
+    DontCare = 0,
+    /// Use a normal amount of bolding.
+    Normal = 400,
+    /// Use a moderate amount of bolding.
+    Semibold = 600,
+    /// Make the text bold.
+    Bold = 700,
+    /// Use a heavy amount of bolding.
+    Ultrabold = 800,
+}
+
+/// A safe wrapper around a system Font.
+#[derive(Debug)]
+pub struct Font {
+    // font family
+    family: String,
+    // font size (em)
+    size: u32,
+    // amount of bolding
+    bold: FontWeight,
+    // is the text italic
+    italic: bool,
+    // is the text underlined
+    underlined: bool,
+    // is the text struck out
+    striked: bool,
 }

@@ -1,7 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/object/linux/x11/mod.rs - This file should define the X11 GUI manager for
- *                               Linux. This module handles the creation of X11
- *                               objects and calling methods on them.
+ * src/object/linux/x11/mod.rs - This should define a handful of objects that
+ *                               implement the basic GuiObject traits.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -45,43 +44,41 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::super::{ApplicationObject, GuiObject};
-use crate::utils::to_cstring;
+pub(crate) use super::super::{
+    gui_object::{self, GuiObject},
+    GuiFactoryBase,
+};
+use crate::Font;
+use nalgebra::geometry::Point4;
 use std::{
-    boxed::Box,
-    cell::RefCell,
-    fmt,
     os::raw::{c_int, c_ulong},
-    ptr,
-    rc::Rc,
+    ptr::{self, NonNull},
+    sync::{Arc, Weak},
 };
 use x11::xlib::{self, Display, Window, GC};
 
-#[derive(Debug)]
-pub struct LApplicationObject {
-    display: *mut Display,
+mod label;
+pub use label::*;
+mod window;
+pub use window::*;
+
+/// The X11 Display. A reference to this should be carried in every X11 window.
+pub struct X11Display {
+    display: Arc<NonNull<Display>>,
+    screen: c_int,
     black_pixel: c_ulong,
     white_pixel: c_ulong,
-    s: c_int,
 }
 
-impl LApplicationObject {
+impl X11Display {
     #[inline]
-    pub fn new(display: *mut Display) -> Self {
-        let s = unsafe { xlib::XDefaultScreen(display) };
-        let black_pixel = unsafe { xlib::XBlackPixel(display, s) };
-        let white_pixel = unsafe { xlib::XWhitePixel(display, s) };
-        Self {
-            display,
-            black_pixel,
-            white_pixel,
-            s,
-        }
+    pub fn get_display_ref(&self) -> Weak<NonNull<Display>> {
+        Arc::downgrade(&self.display)
     }
 
     #[inline]
-    pub fn display(&self) -> *mut Display {
-        self.display
+    pub fn screen(&self) -> c_int {
+        self.screen
     }
 
     #[inline]
@@ -93,168 +90,54 @@ impl LApplicationObject {
     pub fn white_pixel(&self) -> c_ulong {
         self.white_pixel
     }
-
-    #[inline]
-    pub fn screen(&self) -> c_int {
-        self.s
-    }
 }
 
-impl ApplicationObject for LApplicationObject {}
+impl GuiFactoryBase for X11Display {
+    type MainWindow = X11Window<X11MainWindow>;
+    type Label = X11Label;
 
-impl Drop for LApplicationObject {
-    fn drop(&mut self) {
-        unsafe { xlib::XCloseDisplay(self.display) };
-    }
-}
-
-/// Represents a sub-object, or an element not expressed as an X11 window.
-pub trait SubObject: fmt::Debug {
-    fn render(&self) -> Result<(), crate::Error>;
-}
-
-#[derive(Debug)]
-pub enum LGuiObject {
-    Window {
-        window: Window,
-        gc: GC,
-        app: Rc<LApplicationObject>,
-    },
-    SubObject(Box<dyn SubObject>),
-}
-
-// general function for window creation
-fn create_x_window(
-    app: &Rc<LApplicationObject>,
-    parent: Window,
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-    title: &str,
-) -> Result<LGuiObject, crate::Error> {
-    let display = app.display();
-
-    // create window and gc
-    let window = unsafe {
-        xlib::XCreateSimpleWindow(
-            display,
-            parent,
-            x as c_int,
-            y as c_int,
-            w,
-            h,
-            1,
-            app.white_pixel(),
-            app.black_pixel(),
-        )
-    };
-    let gc = unsafe { xlib::XCreateGC(display, window, 0, ptr::null_mut()) };
-
-    // set the window title
-    unsafe { xlib::XStoreName(display, window, to_cstring(title)?) };
-
-    unsafe {
-        xlib::XSelectInput(display, window, xlib::ExposureMask | xlib::KeyPressMask);
-        xlib::XMapWindow(display, window);
+    fn new() -> Result<Self, crate::Error> {
+        let mut display = NonNull::new(unsafe { xlib::XOpenDisplay(ptr::null()) })
+            .ok_or_else(|| crate::Error::UnableToOpenDisplay)?;
+        let screen = unsafe { xlib::XDefaultScreen(display.as_mut()) };
+        let black_pixel = unsafe { xlib::XBlackPixel(display.as_mut(), screen) };
+        let white_pixel = unsafe { xlib::XWhitePixel(display.as_mut(), screen) };
+        Ok(Self {
+            display: Arc::new(display),
+            screen,
+            black_pixel,
+            white_pixel,
+        })
     }
 
-    Ok(LGuiObject::Window {
-        window,
-        gc,
-        app: app.clone(),
-    })
-}
-
-impl GuiObject for LGuiObject {
-    type AObject = Rc<LApplicationObject>;
-
-    // create an application
-    fn application() -> Result<Self::AObject, crate::Error> {
-        let display = unsafe { xlib::XOpenDisplay(ptr::null()) };
-        if display.is_null() {
-            Err(crate::Error::UnableToOpenDisplay)
-        } else {
-            Ok(Rc::new(LApplicationObject::new(display)))
-        }
-    }
-
-    // create the main window for the application
     fn main_window(
-        app: &Self::AObject,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
+        &self,
+        bounds: Point4<u32>,
         title: &str,
-    ) -> Result<Self, crate::Error> {
-        create_x_window(
-            app,
-            unsafe { xlib::XDefaultRootWindow(app.display()) },
-            x,
-            y,
-            w,
-            h,
-            title,
-        )
+    ) -> Result<Self::MainWindow, crate::Error> {
+        X11Window::<X11MainWindow>::new(self, (), bounds, title)
     }
 
-    // create a child window
-    fn child_window(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        title: &str,
-    ) -> Result<Self, crate::Error> {
-        match *parent {
-            LGuiObject::Window { window, .. } => create_x_window(app, window, x, y, w, h, title),
-            _ => Err(crate::Error::ExpectedWindow),
-        }
-    }
-
-    // create a checkbox
-    fn checkbox(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
+    fn label<T: GuiObject>(
+        &self,
+        _parent: &T,
+        bounds: Point4<u32>,
         text: &str,
-    ) -> Result<Self, crate::Error> {
-        unimplemented!()
-    }
-
-    // create a label
-    fn label(
-        app: &Self::AObject,
-        parent: &Self,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        text: &str,
-    ) -> Result<Self, crate::Error> {
-        unimplemented!()
-    }
-
-    // set bounds
-    fn set_rect(x: u32, y: u32, w: u32, h: u32) -> Result<(), crate::Error> {
-        unimplemented!()
+        font: &Font,
+    ) -> Result<Self::Label, crate::Error> {
+        Ok(X11Label::new(bounds, text, font))
     }
 }
 
-impl Drop for LGuiObject {
+impl Drop for X11Display {
     fn drop(&mut self) {
-        if let LGuiObject::Window { window, gc, app } = self {
-            let display = app.display();
-            unsafe {
-                xlib::XFreeGC(display, *gc);
-                xlib::XDestroyWindow(display, *window);
-            }
-        }
+        unsafe { xlib::XCloseDisplay(self.display.as_ref().clone().as_mut()) };
     }
+}
+
+/// Type alias for a weak pointer to the current display.
+pub type DisplayPointer = Weak<NonNull<Display>>;
+
+pub(crate) fn do_upgrade(ptr: &DisplayPointer) -> Result<Arc<NonNull<Display>>, crate::Error> {
+    ptr.upgrade().ok_or_else(|| crate::Error::DroppedDisplay)
 }

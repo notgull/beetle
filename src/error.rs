@@ -43,7 +43,12 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::ffi::NulError;
+use crate::FreetypeError;
+use std::{
+    cell::{BorrowError, BorrowMutError},
+    ffi::NulError,
+    sync::TryLockError,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -54,10 +59,36 @@ pub enum Error {
     StaticMsg(&'static str),
     #[error("{0}")]
     Nul(#[from] NulError),
+    #[error("{0}")]
+    Freetype(#[from] FreetypeError),
+    #[error("{0}")]
+    Borrow(#[from] BorrowError),
+    #[error("{0}")]
+    BorrowMut(#[from] BorrowMutError),
+
+    // semantic errors
+    #[error("Cannot perform operation with raw internal object")]
+    RawInternalInability,
+    #[error("ID {0} was not found in widget mapping")]
+    WidgetMapMissingId(u64),
+    #[error("Unable to open read/write lock")]
+    TryLock,
 
     // X11 errors
     #[error("Unable to open display")]
     UnableToOpenDisplay,
+    #[error("The display object was destroyed")]
+    DroppedDisplay,
     #[error("Expected LGuiObject to be a window")]
     ExpectedWindow,
+    #[error("The root window cannot have its parent reassigned")]
+    RootWindowCannotReassignParent,
+    #[error("A window's parent cannot be a sub-element")]
+    NoSubelementParent,
+}
+
+impl<T> From<TryLockError<T>> for Error {
+    fn from(_t: TryLockError<T>) -> Self {
+        Self::TryLock
+    }
 }

@@ -47,81 +47,227 @@
  * ----------------------------------------------------------------------------------
  */
 
+pub mod map;
+use map::*;
 mod kind;
 pub use kind::*;
 
-use crate::Color;
-use std::{ops::Deref, rc::Rc};
+use crate::{
+    object::{GuiFactory, GuiObject},
+    Color,
+};
+use nalgebra::geometry::Point4;
+use std::{
+    boxed::Box, 
+    fmt,
+    mem,
+    ops::Deref,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
-/// The internal representation of a Widget.
-#[derive(Debug, Clone)]
-pub struct WidgetInternal {
-    kind: WidgetType,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+#[derive(Debug)]
+pub struct WidgetInternal<Inner: IsInWidgetMap> {
+    id: Option<u64>,
+    inner: Inner,
+    bounds: Point4<u32>,
     text: String,
-    parent: Option<Widget>,
-    children: Vec<Widget>,
-    background_color: Option<Color>,
-    foreground_color: Option<Color>,
+    parent: Option<u64>,
+    children: Vec<u64>,
 }
 
-/// A widget that represents a native object in the GUI.
-#[derive(Debug, Clone)]
-pub struct Widget {
-    inner: Rc<WidgetInternal>,
-}
+impl<Inner: GuiObject + IsInWidgetMap> WidgetInternal<Inner> {
+    #[inline]
+    pub(crate) fn empty(inner: Inner) -> Self {
+        Self {
+            id: None,
+            inner,
+            bounds: Point4::new(0, 0, 0, 0),
+            text: String::new(),
+            parent: None,
+            children: vec![],
+        }
+    }
 
-impl Deref for Widget {
-    type Target = WidgetInternal;
+    #[inline]
+    pub(crate) fn create_rc(self) -> Result<Widget<Inner>, crate::Error> {
+        let reference = Arc::new(RwLock::new(self));
+        let w = Widget::from_internal(reference);
+        let id = WIDGETS.try_write()?.insert(w.clone());
+        w.internal().try_write()?.set_id(id);
+        Ok(w)
+    }
 
-    fn deref(&self) -> &Self::Target {
+    #[inline]
+    pub(crate) fn id(&self) -> u64 {
+        self.id.expect("Widget has not yet been assigned its id")
+    }
+
+    #[inline]
+    pub(crate) fn set_id(&mut self, id: u64) {
+        self.id = Some(id)
+    }
+
+    #[inline]
+    pub(crate) fn inner(&self) -> &Inner {
         &self.inner
     }
-}
 
-impl WidgetInternal {
-    // basic getters
     #[inline]
-    pub fn kind(&self) -> WidgetType {
-        self.kind
+    pub(crate) fn inner_mut(&mut self) -> &mut Inner {
+        &mut self.inner
+    }
+
+    #[inline]
+    pub(crate) fn bounds(&self) -> Point4<u32> {
+        self.bounds
     }
     #[inline]
-    pub fn x(&self) -> u32 {
-        self.x
+    pub(crate) fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error> {
+        self.bounds = bounds;
+        self.inner_mut().set_bounds(bounds)
+    }
+
+    #[inline]
+    pub(crate) fn parent_direct(&self) -> Option<u64> {
+        self.parent
     }
     #[inline]
-    pub fn y(&self) -> u32 {
-        self.y
+    pub(crate) fn set_parent_direct(&mut self, parent: Option<u64>) {
+        self.parent = parent
     }
     #[inline]
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-    #[inline]
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-    #[inline]
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-    #[inline]
-    pub fn parent(&self) -> Option<&Widget> {
-        (&self.parent).as_ref()
-    }
-    #[inline]
-    pub fn children(&self) -> &[Widget] {
+    pub(crate) fn children_direct(&self) -> &[u64] {
         &self.children
     }
     #[inline]
-    pub fn background_color(&self) -> Option<Color> {
-        self.background_color
+    pub(crate) fn add_child_direct(&mut self, child: u64) {
+        self.children.push(child)
     }
     #[inline]
-    pub fn foreground_color(&self) -> Option<Color> {
-        self.foreground_color
+    pub(crate) fn remove_child_direct(&mut self, child: u64) {
+        if let Some(i) = self.children.iter().position(|c| *c == child) {
+            self.children.remove(i);
+        }
+    }
+}
+
+/// A trait that describes a widget of any type.
+pub trait GenericWidget {
+    fn bounds(&self) -> Point4<u32>;
+    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error>;
+
+    #[doc(hidden)]
+    fn remove_child_direct(&mut self, id: u64);
+}
+
+impl<Inner: GuiObject + IsInWidgetMap> GenericWidget for Widget<Inner> {
+    #[inline]
+    fn bounds(&self) -> Point4<u32> {
+        self.internal.try_read().unwrap().bounds()
+    }
+
+    #[inline]
+    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error> {
+        // TODO: update container stuff
+        self.internal.try_write()?.set_bounds(bounds)
+    }
+
+    #[inline]
+    fn remove_child_direct(&mut self, id: u64) { self.internal.try_write().unwrap().remove_child_direct(id) }
+}
+
+impl<Inner: GuiObject + IsInWidgetMap> Widget<Inner> {
+    pub fn set_parent<T: GuiObject + IsInWidgetMap>(&mut self, parent: &mut Widget<T>) -> Result<(), crate::Error> {
+        let imm_borrow = self.internal.try_read()?;
+        if let Some(p) = imm_borrow.parent_direct() {
+            WIDGETS
+                .try_read()?
+                .get_generic(p)
+                .ok_or_else(|| crate::Error::WidgetMapMissingId(p))?
+                .remove_child_direct(imm_borrow.id());
+        }
+        mem::drop(imm_borrow);
+
+        {
+            // scoped to drop mut lock
+            self.internal
+                .try_write()?
+                .set_parent_direct(Some(parent.internal().try_read()?.id()));
+            parent
+                .internal()
+                .try_write()?
+                .add_child_direct(self.internal.try_read()?.id());
+        }
+
+        // TODO: rearrange layout manager
+        self.internal.try_write()?
+            .inner_mut().set_parent(parent.internal().try_read()?.inner())
+    }
+
+    #[inline]
+    pub fn parent(&self) -> Option<Box<dyn GenericWidget>> {
+        match self.internal.try_read().unwrap().parent_direct() {
+            None => None,
+            Some(p) => WIDGETS
+                .try_read().unwrap()
+                .get_generic(p)
+        }
+    }
+
+    #[inline]
+    fn children(&self) -> Vec<Box<dyn GenericWidget>> {
+        self.internal
+            .try_read().unwrap()
+            .children_direct()
+            .iter()
+            .filter_map(|r| {
+                WIDGETS
+                    .try_read().unwrap()
+                    .get_generic(*r)
+            })
+            .collect()
+    } 
+
+    #[inline]
+    fn child(&self, index: usize) -> Option<Box<dyn GenericWidget>> {
+        let imm_borrow = self.internal.try_read().unwrap();
+        if index >= imm_borrow.children_direct().len() {
+            None
+        } else {
+            WIDGETS
+                .try_read()
+                .unwrap()
+                .get_generic(imm_borrow.children_direct()[index])
+        }
+    }
+
+    #[inline]
+    fn add_child<T: GuiObject + IsInWidgetMap>(&mut self, child: &mut Widget<T>) -> Result<(), crate::Error> {
+        child.set_parent(self)
+    }
+}
+
+#[derive(Debug)]
+pub struct Widget<Inner: IsInWidgetMap> {
+    internal: Arc<RwLock<WidgetInternal<Inner>>>,
+}
+
+impl<Inner: IsInWidgetMap> Widget<Inner> {
+    /// Gets the shared reference containing the internal widget.
+    #[inline]
+    pub fn internal(&self) -> &Arc<RwLock<WidgetInternal<Inner>>> {
+        &self.internal
+    }
+
+    /// Create a widget that just wraps an Rc around the internal object
+    #[inline]
+    pub(crate) fn from_internal(internal: Arc<RwLock<WidgetInternal<Inner>>>) -> Self {
+        Self { internal }
+    }
+}
+
+impl<Inner: IsInWidgetMap> Clone for Widget<Inner> {
+    fn clone(&self) -> Self {
+        Self::from_internal(self.internal.clone())
     }
 }
