@@ -44,6 +44,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+#![allow(dead_code)]
+#![recursion_limit = "128"]
+
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
 
@@ -60,6 +63,6 @@ pub mod widget;
 pub use widget::*;
 
 pub mod object;
-pub use object::{Label, MainWindow};
+pub use object::{ChildWindow, GuiFactory, Label, MainWindow};
 
 pub(crate) mod utils;

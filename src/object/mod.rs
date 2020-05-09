@@ -44,14 +44,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::widget;
-use nalgebra::geometry::{Point2, Point4};
+use nalgebra::geometry::Point4;
 use std::{
-    boxed::Box,
-    collections::HashMap,
     fmt,
-    ops::{Deref, DerefMut},
-    ptr,
+    ptr::{self, NonNull},
 };
 
 mod factory;
@@ -78,6 +74,10 @@ pub trait GuiObject: fmt::Debug {
     #[cfg(target_os = "linux")]
     #[doc(hidden)]
     fn get_x11_window(&self) -> Option<x11::xlib::Window>;
+    /// If this is a window, get the graphics context for this window.
+    #[cfg(target_os = "linux")]
+    #[doc(hidden)]
+    fn get_x11_gc(&self) -> Option<NonNull<x11::xlib::_XGC>>;
     /// For X11 objects that require re-rendering.
     ///
     /// This should be a no-op for native widgets.
@@ -86,12 +86,15 @@ pub trait GuiObject: fmt::Debug {
         &self,
         display: &ptr::NonNull<x11::xlib::Display>,
         win: x11::xlib::Window,
-        gc: x11::xlib::GC,
+        gc: NonNull<x11::xlib::_XGC>,
     ) -> Result<(), crate::Error>;
 }
 
 pub(crate) mod gui_object {
-    pub use super::{GuiFactoryBase, GuiObject, GuiTextual, LabelBase, MainWindowBase, WindowBase};
+    pub use super::{
+        ChildWindowBase, GuiFactoryBase, GuiObject, GuiTextual, LabelBase, MainWindowBase,
+        WindowBase,
+    };
 }
 
 // object types
@@ -109,4 +112,4 @@ pub type ChildWindow = _ChildWindow;
 
 #[cfg(target_os = "linux")]
 type _GuiFactory = linux::X11Display;
-pub type GuiFactory = _GuiFactory; 
+pub type GuiFactory = _GuiFactory;

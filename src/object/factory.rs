@@ -44,14 +44,14 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{GuiObject, LabelBase, MainWindowBase};
-use crate::Font;
+use super::{ChildWindowBase, GuiObject, LabelBase, MainWindow, MainWindowBase, WindowBase};
+use crate::{Font, Widget};
 use nalgebra::Point4;
-use std::rc::Rc;
 
 pub trait GuiFactoryBase: Sized {
     type Label: LabelBase;
     type MainWindow: MainWindowBase;
+    type ChildWindow: ChildWindowBase;
 
     /// Create a new GuiFactory.
     fn new() -> Result<Self, crate::Error>;
@@ -69,4 +69,13 @@ pub trait GuiFactoryBase: Sized {
         text: &str,
         font: &Font,
     ) -> Result<Self::Label, crate::Error>;
+    /// Create a new child window.
+    fn child_window<T: WindowBase>(
+        &self,
+        parent: &T,
+        bounds: Point4<u32>,
+        title: &str,
+    ) -> Result<Self::ChildWindow, crate::Error>;
+    /// Begin the main loop.
+    fn main_loop(self, window: Widget<MainWindow>) -> Result<(), crate::Error>;
 }

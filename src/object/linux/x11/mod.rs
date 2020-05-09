@@ -45,17 +45,19 @@
  */
 
 pub(crate) use super::super::{
-    gui_object::{self, GuiObject},
+    gui_object::{self, GuiObject, WindowBase},
     GuiFactoryBase,
 };
-use crate::Font;
+use crate::{Font, GenericWidget, MainWindow, Widget};
 use nalgebra::geometry::Point4;
 use std::{
+    convert::AsMut,
+    mem,
     os::raw::{c_int, c_ulong},
     ptr::{self, NonNull},
     sync::{Arc, Weak},
 };
-use x11::xlib::{self, Display, Window, GC};
+use x11::xlib::{self, Atom, Display, Window, _XGC};
 
 mod label;
 pub use label::*;
@@ -63,6 +65,7 @@ mod window;
 pub use window::*;
 
 /// The X11 Display. A reference to this should be carried in every X11 window.
+#[derive(Debug)]
 pub struct X11Display {
     display: Arc<NonNull<Display>>,
     screen: c_int,
@@ -93,6 +96,7 @@ impl X11Display {
 }
 
 impl GuiFactoryBase for X11Display {
+    type ChildWindow = X11Window<X11ChildWindow>;
     type MainWindow = X11Window<X11MainWindow>;
     type Label = X11Label;
 
@@ -127,6 +131,71 @@ impl GuiFactoryBase for X11Display {
     ) -> Result<Self::Label, crate::Error> {
         Ok(X11Label::new(bounds, text, font))
     }
+
+    fn child_window<T: WindowBase>(
+        &self,
+        parent: &T,
+        bounds: Point4<u32>,
+        title: &str,
+    ) -> Result<Self::ChildWindow, crate::Error> {
+        X11Window::<X11ChildWindow>::new(self, parent.get_x11_window().unwrap(), bounds, title)
+    }
+
+    fn main_loop(self, window: Widget<MainWindow>) -> Result<(), crate::Error> {
+        // set up x11 event loop
+        let mut xevent: xlib::XEvent = unsafe { mem::zeroed() };
+        let d_ptr = self.display.as_ptr();
+        'main: loop {
+            unsafe { xlib::XNextEvent(d_ptr, &mut xevent) };
+
+            if unsafe { xevent.type_ } == xlib::Expose {
+                // draw all subcomponents
+                let inner_lock = window.internal().try_borrow()?;
+                let inner = inner_lock.inner();
+                render_tree(
+                    &self.display,
+                    &window,
+                    inner.get_x11_window().unwrap(),
+                    inner.get_x11_gc().unwrap(),
+                )?;
+            }
+
+            if (unsafe { xevent.type_ } == xlib::ClientMessage)
+                && (AsMut::<[Atom]>::as_mut(&mut unsafe { xevent.client_message.data })[0]
+                    == window.internal().try_borrow()?.inner().delete_window_atom())
+            {
+                break 'main;
+            }
+        }
+        Ok(())
+    }
+}
+
+// render components down the render tree
+fn render_tree(
+    display: &NonNull<Display>,
+    widget: &dyn GenericWidget,
+    current_window: Window,
+    gc: NonNull<_XGC>,
+) -> Result<(), crate::Error> {
+    // render the current component
+    let inner = widget.inner_generic()?;
+    inner.render(display, current_window, gc)?;
+
+    // iterate over children
+    widget
+        .children()?
+        .into_iter()
+        .map(|w| match w.inner_generic()?.get_x11_window() {
+            Some(next_window) => {
+                let next_gc = inner.get_x11_gc().unwrap();
+                render_tree(display, w, next_window, next_gc)
+            }
+            None => render_tree(display, w, current_window, gc),
+        })
+        .collect::<Result<Vec<()>, crate::Error>>()?;
+
+    Ok(())
 }
 
 impl Drop for X11Display {

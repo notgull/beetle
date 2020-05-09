@@ -49,7 +49,7 @@ pub use error::*;
 
 use crate::utils;
 use freetype::freetype as ft;
-use std::{mem, os::raw::c_int, path::Path, ptr, slice};
+use std::{path::Path, ptr};
 
 /// The freetype core library object.
 #[derive(Debug, Clone)]

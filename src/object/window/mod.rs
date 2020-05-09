@@ -45,6 +45,9 @@
 
 use super::GuiObject;
 
+mod child_window;
+pub use child_window::*;
+
 mod main_window;
 pub use main_window::*;
 

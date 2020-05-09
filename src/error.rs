@@ -47,7 +47,6 @@ use crate::FreetypeError;
 use std::{
     cell::{BorrowError, BorrowMutError},
     ffi::NulError,
-    sync::TryLockError,
 };
 use thiserror::Error;
 
@@ -69,10 +68,8 @@ pub enum Error {
     // semantic errors
     #[error("Cannot perform operation with raw internal object")]
     RawInternalInability,
-    #[error("ID {0} was not found in widget mapping")]
-    WidgetMapMissingId(u64),
-    #[error("Unable to open read/write lock")]
-    TryLock,
+    #[error("Widget reference points to dropped widget")]
+    DroppedWidget,
 
     // X11 errors
     #[error("Unable to open display")]
@@ -85,10 +82,6 @@ pub enum Error {
     RootWindowCannotReassignParent,
     #[error("A window's parent cannot be a sub-element")]
     NoSubelementParent,
-}
-
-impl<T> From<TryLockError<T>> for Error {
-    fn from(_t: TryLockError<T>) -> Self {
-        Self::TryLock
-    }
+    #[error("Unable to create the X11 Graphics Context")]
+    NoXGC,
 }

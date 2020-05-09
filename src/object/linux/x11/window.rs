@@ -45,7 +45,7 @@
 
 use super::{
     do_upgrade,
-    gui_object::{GuiObject, MainWindowBase, WindowBase},
+    gui_object::{ChildWindowBase, GuiObject, MainWindowBase, WindowBase},
     DisplayPointer, X11Display,
 };
 use nalgebra::Point4;
@@ -55,7 +55,7 @@ use std::{
     os::raw::c_int,
     ptr::{self, NonNull},
 };
-use x11::xlib::{self, Display, Window, GC};
+use x11::xlib::{self, Atom, Display, Window, GC, _XGC};
 
 /// Flags that can be passed to the X11Window through generics.
 pub trait X11WindowType: Sized + fmt::Debug {
@@ -108,14 +108,15 @@ impl X11WindowType for X11ChildWindow {
 pub struct X11Window<WindowType: X11WindowType> {
     display: DisplayPointer,
     window: Window,
-    gc: GC,
+    gc: NonNull<_XGC>,
+    delete_window_atom: Atom,
 
     bounds: Point4<u32>,
     _phantom: PhantomData<WindowType>,
 }
 
-unsafe impl<WT: X11WindowType> Send for X11Window<WT> { }
-unsafe impl<WT: X11WindowType> Sync for X11Window<WT> { }
+unsafe impl<WT: X11WindowType> Send for X11Window<WT> {}
+unsafe impl<WT: X11WindowType> Sync for X11Window<WT> {}
 
 impl<WindowType: X11WindowType> X11Window<WindowType> {
     pub fn new(
@@ -157,13 +158,34 @@ impl<WindowType: X11WindowType> X11Window<WindowType> {
         // create a GC to draw with
         let gc = unsafe { xlib::XCreateGC(dpy, window, 0, ptr::null_mut()) };
 
+        // window for deleting this atom
+        let mut delete_window_atom = unsafe {
+            xlib::XInternAtom(
+                dpy,
+                crate::utils::to_cstring("WM_DELETE_WINDOW")?,
+                xlib::False,
+            )
+        };
+        unsafe { xlib::XSetWMProtocols(dpy, window, &mut delete_window_atom, 1) };
+
         Ok(Self {
             display: weak_ptr,
             window,
-            gc,
+            gc: NonNull::new(gc).ok_or_else(|| crate::Error::NoXGC)?,
             bounds,
+            delete_window_atom,
             _phantom: PhantomData,
         })
+    }
+
+    #[inline]
+    pub fn gc(&self) -> GC {
+        self.gc.as_ptr()
+    }
+
+    #[inline]
+    pub fn delete_window_atom(&self) -> Atom {
+        self.delete_window_atom
     }
 }
 
@@ -181,6 +203,8 @@ impl<T: X11WindowType> WindowBase for X11Window<T> {
 }
 
 impl MainWindowBase for X11Window<X11MainWindow> {}
+
+impl ChildWindowBase for X11Window<X11ChildWindow> {}
 
 impl<WindowType: X11WindowType> GuiObject for X11Window<WindowType> {
     #[inline]
@@ -228,12 +252,28 @@ impl<WindowType: X11WindowType> GuiObject for X11Window<WindowType> {
         Some(self.window)
     }
     #[inline]
+    fn get_x11_gc(&self) -> Option<NonNull<_XGC>> {
+        Some(self.gc)
+    }
+    #[inline]
     fn render(
         &self,
         _display: &NonNull<Display>,
         _win: Window,
-        _gc: GC,
+        _gc: NonNull<_XGC>,
     ) -> Result<(), crate::Error> {
         Ok(())
+    }
+}
+
+impl<WindowType: X11WindowType> Drop for X11Window<WindowType> {
+    fn drop(&mut self) {
+        if let Ok(dpy) = do_upgrade(&self.display) {
+            let dpy = dpy.as_ptr();
+            unsafe {
+                xlib::XFreeGC(dpy, self.gc.as_ptr());
+                xlib::XDestroyWindow(dpy, self.window);
+            }
+        }
     }
 }

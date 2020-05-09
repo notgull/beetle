@@ -148,10 +148,10 @@ pub enum FreetypeError {
 
 #[inline]
 fn convert_to_rerror(error: freetype::FT_Error) -> FreetypeError {
-    type fte = FreetypeError;
+    type Fte = FreetypeError;
 
     // TODO: a good match statement
-    fte::Unknown(error)
+    Fte::Unknown(error)
 }
 
 /// If the number represents a Freetype error, return a Rust error.

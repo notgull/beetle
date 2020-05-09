@@ -1,5 +1,7 @@
 /* -----------------------------------------------------------------------------------
- * src/object/linux/x11/label.rs - This should define a subobject for the X11 label.
+ * src/widget/reference.rs - Defines the GenericWidgetReference struct, which is a
+ *                           Weak wrapper around a `dyn GenericWidgetInternal`. It
+ *                           should forward its calls to the internal structure.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,85 +45,51 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::gui_object::{GuiObject, GuiTextual, LabelBase};
-use crate::Font;
+use super::{set_parent_internal, GenericWidget, GenericWidgetInternal};
+use crate::{forward_to_i_generic, object::GuiObject};
 use nalgebra::geometry::Point4;
+use owning_ref::{RefMutRefMut, RefRef};
 use std::{
-    os::raw::c_int,
-    ptr::{self, NonNull},
+    cell::RefCell,
+    sync::Arc,
 };
-use x11::xlib::{self, Display, Window};
 
+/// A generic reference to a widget.
 #[derive(Debug)]
-pub struct X11Label {
-    bounds: Point4<u32>,
-    text: String,
-    //display: DisplayPointer,
-    //window: Window,
+pub struct GenericWidgetReference {
+    reference: Arc<RefCell<dyn GenericWidgetInternal>>,
 }
 
-impl X11Label {
-    pub fn new(bounds: Point4<u32>, text: &str, _font: &Font) -> Self {
-        Self {
-            bounds,
-            text: text.to_string(),
-        }
+impl Clone for GenericWidgetReference {
+    fn clone(&self) -> Self {
+        Self::from_reference(self.reference().clone())
     }
 }
 
-impl GuiTextual for X11Label {
-    fn set_text(&mut self, val: &str) -> Result<(), crate::Error> {
-        self.text = val.to_string();
-        Ok(())
-    }
-}
-
-impl LabelBase for X11Label {}
-
-impl GuiObject for X11Label {
-    fn bounds(&self) -> Point4<u32> {
-        self.bounds
-    }
-    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error> {
-        self.bounds = bounds;
-        // TODO: for now, let's assume that the upper widget will take care of re-rendering for us
-        //x11_utils::force_x11_redraw(do_upgrade(self.display)?.as_ptr(), self.window, bounds)
-        Ok(())
-    }
-    fn set_parent(&mut self, parent: &dyn GuiObject) -> Result<(), crate::Error> {
-        if let Some(w) = parent.get_x11_window() {
-            //self.window = w;
-        } // container cases should be handled by real objects
-        Ok(())
-    }
+impl GenericWidgetReference {
+    /// Create a GenericWidgetReference from the raw reference.
     #[inline]
-    fn get_x11_window(&self) -> Option<Window> {
-        None
-    }
-    #[inline]
-    fn get_x11_gc(&self) -> Option<ptr::NonNull<xlib::_XGC>> {
-        None
+    pub(crate) fn from_reference(reference: Arc<RefCell<dyn GenericWidgetInternal>>) -> Self {
+        Self { reference }
     }
 
-    fn render(
-        &self,
-        display: &ptr::NonNull<Display>,
-        win: Window,
-        gc: NonNull<xlib::_XGC>,
-    ) -> Result<(), crate::Error> {
-        let display = display.as_ptr();
-        // TODO: use font bitmaps instead of XDrawString
-        unsafe {
-            xlib::XDrawString(
-                display,
-                win,
-                gc.as_ptr(),
-                self.bounds.x as c_int,
-                self.bounds.y as c_int,
-                crate::utils::to_cstring(&self.text)?,
-                self.text.bytes().count() as c_int,
-            )
-        };
-        Ok(())
+    /// Get the internal reference object.
+    #[inline]
+    pub(crate) fn reference(&self) -> &Arc<RefCell<dyn GenericWidgetInternal>> {
+        &self.reference
     }
+}
+
+impl GenericWidget for GenericWidgetReference {
+    #[inline]
+    fn internal_generic(&self) -> Result<&Arc<RefCell<dyn GenericWidgetInternal>>, crate::Error> {
+        Ok(self.reference())
+    }
+
+    #[inline]
+    fn generic_reference(&self) -> GenericWidgetReference {
+        self.clone()
+    }
+
+    forward_to_i_generic! {}
 }
