@@ -127,7 +127,7 @@ impl GuiFactoryBase for X11Display {
         _parent: &T,
         bounds: Point4<u32>,
         text: &str,
-        font: &Font,
+        font: Option<&Font>,
     ) -> Result<Self::Label, crate::Error> {
         Ok(X11Label::new(bounds, text, font))
     }

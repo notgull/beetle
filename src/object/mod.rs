@@ -50,6 +50,8 @@ use std::{
     ptr::{self, NonNull},
 };
 
+mod container;
+pub use container::*;
 mod factory;
 pub use factory::*;
 mod label;
@@ -92,8 +94,8 @@ pub trait GuiObject: fmt::Debug {
 
 pub(crate) mod gui_object {
     pub use super::{
-        ChildWindowBase, GuiFactoryBase, GuiObject, GuiTextual, LabelBase, MainWindowBase,
-        WindowBase,
+        ChildWindowBase, ContainerBase, GuiFactoryBase, GuiObject, GuiTextual, LabelBase,
+        MainWindowBase, WindowBase,
     };
 }
 

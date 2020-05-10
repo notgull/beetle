@@ -46,9 +46,17 @@
  */
 
 use super::{GenericWidget, GenericWidgetReference};
-use crate::object::GuiObject;
+use crate::object::{GuiObject, GuiTextual, WindowBase};
 use nalgebra::geometry::Point4;
-use std::fmt;
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
+
+lazy_static::lazy_static! {
+    /// The next ID to give to the next widget.
+    static ref NEXT_WIDGET_ID: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+}
 
 /// A wrapper around the peer object.
 #[derive(Debug)]
@@ -76,6 +84,43 @@ impl<Inner: GuiObject + 'static> WidgetInternal<Inner> {
     #[inline]
     pub(crate) fn inner_mut(&mut self) -> &mut Inner {
         &mut self.inner
+    }
+
+    /// Create a new item with specified inner, bounds, and text.
+    #[inline]
+    pub(crate) fn from_inner(inner: Inner, bounds: Point4<u32>, text: String) -> Self {
+        let mut guard = NEXT_WIDGET_ID.lock().expect("Unable to lock Widget ID");
+        let id = *guard;
+        *guard += 1;
+        Self {
+            inner,
+            bounds,
+            text,
+            parent: None,
+            children: vec![],
+            id,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+impl<Inner: GuiTextual + 'static> WidgetInternal<Inner> {
+    #[inline]
+    pub(crate) fn set_text(&mut self, text: String) -> Result<(), crate::Error> {
+        self.text = text;
+        self.inner.set_text(&self.text)
+    }
+}
+
+impl<Inner: WindowBase + 'static> WidgetInternal<Inner> {
+    #[inline]
+    pub(crate) fn set_title(&mut self, text: String) -> Result<(), crate::Error> {
+        self.text = text;
+        self.inner.set_title(&self.text)
     }
 }
 

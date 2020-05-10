@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::GuiObject;
+use super::ContainerBase;
 
 mod child_window;
 pub use child_window::*;
@@ -51,6 +51,7 @@ pub use child_window::*;
 mod main_window;
 pub use main_window::*;
 
-pub trait WindowBase: GuiObject {
+pub trait WindowBase: ContainerBase {
     fn set_title(&mut self, val: &str) -> Result<(), crate::Error>;
+    fn display(&self) -> Result<(), crate::Error>;
 }

@@ -66,7 +66,7 @@ pub enum FontWeight {
 }
 
 /// A safe wrapper around a system Font.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Font {
     // font family
     family: String,

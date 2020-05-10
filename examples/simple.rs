@@ -1,7 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/widget/reference.rs - Defines the GenericWidgetReference struct, which is a
- *                           Weak wrapper around a `dyn GenericWidgetInternal`. It
- *                           should forward its calls to the internal structure.
+ * examples/simple.rs - Create a window with a label inside of it.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -45,48 +43,25 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{set_parent_internal, GenericWidget, GenericWidgetInternal};
-use crate::{forward_to_i_generic, object::GuiObject};
+use beetle::{prelude::*, GuiFactory, Label, MainWindow, Widget};
 use nalgebra::geometry::Point4;
-use owning_ref::{RefMutRefMut, RefRef};
-use std::{cell::RefCell, sync::Arc};
 
-/// A generic reference to a widget.
-#[derive(Debug)]
-pub struct GenericWidgetReference {
-    reference: Arc<RefCell<dyn GenericWidgetInternal>>,
-}
+fn main() -> Result<(), beetle::Error> {
+    let factory = GuiFactory::new()?;
+    let main_window = Widget::<MainWindow>::new_main_window(
+        &factory,
+        Point4::new(0, 0, 600, 400),
+        "Test".to_string(),
+    )?;
+    let _label = Widget::<Label>::new_label(
+        &factory,
+        &main_window,
+        Point4::new(20, 20, 80, 80),
+        "Hello world!".to_string(),
+        None,
+    )?;
 
-impl Clone for GenericWidgetReference {
-    fn clone(&self) -> Self {
-        Self::from_reference(self.reference().clone())
-    }
-}
+    main_window.display()?;
 
-impl GenericWidgetReference {
-    /// Create a GenericWidgetReference from the raw reference.
-    #[inline]
-    pub(crate) fn from_reference(reference: Arc<RefCell<dyn GenericWidgetInternal>>) -> Self {
-        Self { reference }
-    }
-
-    /// Get the internal reference object.
-    #[inline]
-    pub(crate) fn reference(&self) -> &Arc<RefCell<dyn GenericWidgetInternal>> {
-        &self.reference
-    }
-}
-
-impl GenericWidget for GenericWidgetReference {
-    #[inline]
-    fn internal_generic(&self) -> Result<&Arc<RefCell<dyn GenericWidgetInternal>>, crate::Error> {
-        Ok(self.reference())
-    }
-
-    #[inline]
-    fn generic_reference(&self) -> GenericWidgetReference {
-        self.clone()
-    }
-
-    forward_to_i_generic! {}
+    factory.main_loop(main_window)
 }

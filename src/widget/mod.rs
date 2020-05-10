@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/widget/mod.rs
+ * src/widget/mod.rs - Define the core Widget struct.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,6 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
+mod impls;
 pub mod internal;
 use internal::*;
 mod reference;
@@ -54,17 +55,25 @@ use owning_ref::{RefMutRefMut, RefRef};
 use std::{cell::RefCell, fmt, sync::Arc};
 
 /// A GUI widget.
+///
+/// This struct represents all GUI widgets. It acts as a wrapper around a peer object, such
+/// as a Label, MainWindow, etc. It stores data related to the peer object and forwards
+/// calls to it. The Widget is also implemented as an Arc<RefCell<T>>, so it can be cheaply
+/// cloned and most calls to it do not require mutable access.
 #[derive(Debug)]
 pub struct Widget<Inner: GuiObject + 'static> {
     internal: Arc<RefCell<WidgetInternal<Inner>>>,
-    generic_ref: Arc<RefCell<dyn GenericWidgetInternal>>
+    generic_ref: Arc<RefCell<dyn GenericWidgetInternal>>,
 }
 
 impl<Inner: GuiObject + 'static> Widget<Inner> {
     /// Create a new Widget from the internal Arc.
     #[inline]
     pub(crate) fn from_internal(internal: Arc<RefCell<WidgetInternal<Inner>>>) -> Self {
-        Self { generic_ref: internal.clone(), internal }
+        Self {
+            generic_ref: internal.clone(),
+            internal,
+        }
     }
 
     /// Get the internal Arc of the Widget.
@@ -72,9 +81,36 @@ impl<Inner: GuiObject + 'static> Widget<Inner> {
     pub(crate) fn internal(&self) -> &Arc<RefCell<WidgetInternal<Inner>>> {
         &self.internal
     }
+
+    /// Create a new Widget from an inner peer object.
+    #[inline]
+    pub(crate) fn from_inner(inner: Inner, bounds: Point4<u32>, text: String) -> Self {
+        Self::from_internal(Arc::new(RefCell::new(WidgetInternal::<Inner>::from_inner(
+            inner, bounds, text,
+        ))))
+    }
+
+    /// Get a reference to the inner peer object.
+    #[inline]
+    pub fn inner(&self) -> Result<RefRef<'_, WidgetInternal<Inner>, Inner>, crate::Error> {
+        Ok(RefRef::new(self.internal().try_borrow()?).map(|i| i.inner()))
+    }
+
+    /// Get a mutable reference to the inner peer object.
+    #[inline]
+    pub fn inner_mut(
+        &self,
+    ) -> Result<RefMutRefMut<'_, WidgetInternal<Inner>, Inner>, crate::Error> {
+        Ok(RefMutRefMut::new(self.internal().try_borrow_mut()?).map_mut(|i| i.inner_mut()))
+    }
 }
 
 /// Trait that applies to all GUI widgets.
+///
+/// This trait solves the issue of "what if we want something to be accessible to all
+/// instances of a widget?" GenericWidget is not only applied to Widget<T>, but also to
+/// GenericWidgetReference, meaning that any reference to a Widget<T> can be used as a
+/// widget, even if we are unsure of its type.
 pub trait GenericWidget: fmt::Debug {
     /// The ID of this widget that uniquely identifies it.
     fn id(&self) -> Result<u64, crate::Error>;

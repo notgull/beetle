@@ -45,7 +45,9 @@
 
 use super::{
     do_upgrade,
-    gui_object::{ChildWindowBase, GuiObject, MainWindowBase, WindowBase},
+    gui_object::{
+        ChildWindowBase, ContainerBase, GuiFactoryBase, GuiObject, MainWindowBase, WindowBase,
+    },
     DisplayPointer, X11Display,
 };
 use nalgebra::Point4;
@@ -168,6 +170,11 @@ impl<WindowType: X11WindowType> X11Window<WindowType> {
         };
         unsafe { xlib::XSetWMProtocols(dpy, window, &mut delete_window_atom, 1) };
 
+        unsafe {
+            xlib::XSetBackground(dpy,gc,display.white_pixel());
+            xlib::XSetForeground(dpy,gc,display.black_pixel());
+        };
+
         Ok(Self {
             display: weak_ptr,
             window,
@@ -198,6 +205,11 @@ impl<T: X11WindowType> WindowBase for X11Window<T> {
                 crate::utils::to_cstring(val)?,
             )
         };
+        Ok(())
+    }
+
+    fn display(&self) -> Result<(), crate::Error> {
+        unsafe { xlib::XMapRaised(do_upgrade(&self.display)?.as_ptr(), self.window) };
         Ok(())
     }
 }
@@ -265,6 +277,8 @@ impl<WindowType: X11WindowType> GuiObject for X11Window<WindowType> {
         Ok(())
     }
 }
+
+impl<WindowType: X11WindowType> ContainerBase for X11Window<WindowType> {}
 
 impl<WindowType: X11WindowType> Drop for X11Window<WindowType> {
     fn drop(&mut self) {

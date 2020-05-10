@@ -61,7 +61,7 @@ pub struct X11Label {
 }
 
 impl X11Label {
-    pub fn new(bounds: Point4<u32>, text: &str, _font: &Font) -> Self {
+    pub fn new(bounds: Point4<u32>, text: &str, _font: Option<&Font>) -> Self {
         Self {
             bounds,
             text: text.to_string(),

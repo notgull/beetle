@@ -66,3 +66,10 @@ pub mod object;
 pub use object::{ChildWindow, GuiFactory, Label, MainWindow};
 
 pub(crate) mod utils;
+
+pub mod prelude {
+    pub use super::{
+        object::{GuiFactoryBase, LabelBase, MainWindowBase, WindowBase},
+        GenericWidget,
+    };
+}

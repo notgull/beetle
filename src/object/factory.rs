@@ -67,7 +67,7 @@ pub trait GuiFactoryBase: Sized {
         parent: &T,
         bounds: Point4<u32>,
         text: &str,
-        font: &Font,
+        font: Option<&Font>,
     ) -> Result<Self::Label, crate::Error>;
     /// Create a new child window.
     fn child_window<T: WindowBase>(

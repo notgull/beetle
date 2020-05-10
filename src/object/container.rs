@@ -1,7 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/widget/reference.rs - Defines the GenericWidgetReference struct, which is a
- *                           Weak wrapper around a `dyn GenericWidgetInternal`. It
- *                           should forward its calls to the internal structure.
+ * src/object/container.rs - GUI objects that can contain other GUI objects.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -45,48 +43,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{set_parent_internal, GenericWidget, GenericWidgetInternal};
-use crate::{forward_to_i_generic, object::GuiObject};
-use nalgebra::geometry::Point4;
-use owning_ref::{RefMutRefMut, RefRef};
-use std::{cell::RefCell, sync::Arc};
+use super::GuiObject;
 
-/// A generic reference to a widget.
-#[derive(Debug)]
-pub struct GenericWidgetReference {
-    reference: Arc<RefCell<dyn GenericWidgetInternal>>,
-}
-
-impl Clone for GenericWidgetReference {
-    fn clone(&self) -> Self {
-        Self::from_reference(self.reference().clone())
-    }
-}
-
-impl GenericWidgetReference {
-    /// Create a GenericWidgetReference from the raw reference.
-    #[inline]
-    pub(crate) fn from_reference(reference: Arc<RefCell<dyn GenericWidgetInternal>>) -> Self {
-        Self { reference }
-    }
-
-    /// Get the internal reference object.
-    #[inline]
-    pub(crate) fn reference(&self) -> &Arc<RefCell<dyn GenericWidgetInternal>> {
-        &self.reference
-    }
-}
-
-impl GenericWidget for GenericWidgetReference {
-    #[inline]
-    fn internal_generic(&self) -> Result<&Arc<RefCell<dyn GenericWidgetInternal>>, crate::Error> {
-        Ok(self.reference())
-    }
-
-    #[inline]
-    fn generic_reference(&self) -> GenericWidgetReference {
-        self.clone()
-    }
-
-    forward_to_i_generic! {}
-}
+pub trait ContainerBase: GuiObject {}
