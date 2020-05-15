@@ -47,8 +47,9 @@
 
 use euclid::default::Rect;
 use std::{
+    ffi::CString,
     fmt, mem,
-    os::raw::{c_int, c_uint, c_ulong},
+    os::raw::{c_char, c_int, c_uint, c_ulong},
     ptr::{self, NonNull},
     sync::{Arc, Weak},
 };
@@ -56,12 +57,22 @@ use x11::xlib::{self, XID, _XGC};
 
 pub mod color;
 pub use color::*;
+pub mod drawable;
+pub use drawable::*;
 pub mod error;
 pub use error::*;
+pub mod event;
+pub use event::*;
 mod screen;
 pub use screen::*;
 pub mod window;
 pub use window::*;
+
+/// Utility function to convert a String into an ASCII *mut c_char
+#[inline]
+pub(crate) unsafe fn to_cstring(s: String) -> Result<*mut c_char, FlutterbugError> {
+    Ok(CString::new(s)?.into_raw())
+}
 
 /// A trait that represents that something can be transformed into an XID.
 pub trait HasXID {
@@ -172,7 +183,9 @@ pub trait GenericDisplay: fmt::Debug {
     fn raw(&self) -> Result<NonNull<xlib::Display>, FlutterbugError>;
     /// Get the default screen for this instance.
     fn default_screen(&self) -> Result<Screen, FlutterbugError> {
-        Ok(Screen::new(unsafe { xlib::XDefaultScreen(self.raw()?.as_mut()) }))
+        Ok(Screen::new(unsafe {
+            xlib::XDefaultScreen(self.raw()?.as_mut())
+        }))
     }
     /// Get the black pixel for the default screen.
     fn black_pixel(&self) -> Result<Color, FlutterbugError> {

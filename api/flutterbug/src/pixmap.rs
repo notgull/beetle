@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * api/flutterbug/src/error.rs - Errors that can occur over the course of Flutterbug
- *                               operation.
+ * api/flutterbug/src/pixmap.rs - An array of pixels, like an image.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,52 +43,4 @@
  * ----------------------------------------------------------------------------------
  */
 
-//! Error handling module.
-//!
-//! This module exports types related to error handling, such as the FlutterbugError,
-//! a catch-all error type, and the X11Error, which holds data derived from the
-//! XErrorEvent type.
 
-use std::{ffi::NulError, sync::TryLockError};
-use thiserror::Error;
-
-/// An error that occurred during normal operation of Flutterbug.
-#[derive(Debug, Error)]
-pub enum FlutterbugError {
-    /// A non-static error message.
-    #[error("{0}")]
-    Msg(String),
-    /// Can't cast DisplayReference to Display.
-    #[error(
-        "Unable to cast DisplayReference to Display. This usually means that the Display object was dropped."
-    )]
-    DisplayWasDropped,
-    /// Can't cast GraphicsContextReference to GraphicsContext.
-    #[error("Unable to cast GraphicsContextReference to GraphicsContext.")]
-    GCWasDropped,
-    /// XOpenDisplay returned null.
-    #[error("Unable to open X11 display")]
-    UnableToOpenDisplay,
-    /// No ID in color map
-    #[error("Pixel ID {0} was not found in the colormap")]
-    ColorNotFound(std::os::raw::c_ulong),
-    /// GC returned null.
-    #[error("Unable to create graphics context for window")]
-    UnableToCreateGC,
-    /// Invalid event type
-    #[error("Event type is not a valid X11 event type")]
-    InvalidEventType,
-    /// RwLock failed to lock.
-    #[error("Unable to create lock for RwLock")]
-    LockError,
-    /// CString creation process failed.
-    #[error("CString creation process failed")]
-    NulError(#[from] NulError),
-}
-
-impl<T> From<TryLockError<T>> for FlutterbugError {
-    #[inline]
-    fn from(_t: TryLockError<T>) -> Self {
-        Self::LockError
-    }
-}
