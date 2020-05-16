@@ -715,9 +715,6 @@ impl DerivesAnEvent for Event {
 
 impl DerivesEvent<xlib::XEvent> for Event {
     fn from_evstruct(x: xlib::XEvent) -> Result<Self, FlutterbugError> {
-        let kind = unsafe { x.type_ };
-        let kind = EventType::from_int(kind).ok_or_else(|| FlutterbugError::InvalidEventType)?;
-
         macro_rules! evt {
             ($bname: ident, $sname: ty, $evfield: ident) => {
                 Ok(Event::$bname(<$sname>::from_evstruct(unsafe {
@@ -725,6 +722,12 @@ impl DerivesEvent<xlib::XEvent> for Event {
                 })?))
             };
         }
+
+        let kind = unsafe { x.type_ };
+        let kind = match EventType::from_int(kind) {
+            Some(k) => k,
+            None => return evt!(Any, AnyEvent, any),
+        };
 
         match kind {
             EventType::KeyPress | EventType::KeyRelease => evt!(Key, KeyEvent, key),
@@ -766,7 +769,6 @@ impl DerivesEvent<xlib::XEvent> for Event {
                 evt!(SelectionRequest, SelectionRequestEvent, selection_request)
             }
             EventType::SelectionNotify => evt!(Selection, SelectionEvent, selection),
-            _ => evt!(Any, AnyEvent, any),
         }
     }
 }

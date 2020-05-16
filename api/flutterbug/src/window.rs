@@ -46,7 +46,7 @@
  */
 
 use super::{
-    to_cstring, ColorMap, DisplayReference, Drawable, FlutterbugError, GenericDisplay,
+    to_cstring, ColorMap, DisplayReference, Drawable, EventMask, FlutterbugError, GenericDisplay,
     GenericGraphicsContext, GraphicsContext, GraphicsContextReference, HasXID,
 };
 use euclid::default::{Point2D, Rect, Size2D};
@@ -260,6 +260,13 @@ impl Window {
         window_name: Option<String>,
         icon_name: Option<String>,
     ) -> Result<(), FlutterbugError> {
+        Ok(())
+    }
+
+    /// Select which inputs to use.
+    #[inline]
+    pub fn select_input(&self, mask: EventMask) -> Result<(), FlutterbugError> {
+        unsafe { xlib::XSelectInput(self.dpy.raw()?.as_mut(), self.win, mask.bits()) };
         Ok(())
     }
 }

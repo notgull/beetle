@@ -52,6 +52,7 @@
 
 use std::{ffi::NulError, sync::TryLockError};
 use thiserror::Error;
+use x11::xlib::XID;
 
 /// An error that occurred during normal operation of Flutterbug.
 #[derive(Debug, Error)]
@@ -82,6 +83,12 @@ pub enum FlutterbugError {
     /// RwLock failed to lock.
     #[error("Unable to create lock for RwLock")]
     LockError,
+    /// Context does not contain object
+    #[error("The context did not contain object {0}")]
+    ContextNotFound(XID),
+    /// Context contained invalid type
+    #[error("Context contained invalid type object")]
+    ContextInvalidType,
     /// CString creation process failed.
     #[error("CString creation process failed")]
     NulError(#[from] NulError),

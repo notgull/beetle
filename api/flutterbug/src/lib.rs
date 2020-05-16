@@ -57,6 +57,8 @@ use x11::xlib::{self, XID, _XGC};
 
 pub mod color;
 pub use color::*;
+pub mod context;
+pub use context::*;
 pub mod drawable;
 pub use drawable::*;
 pub mod error;
@@ -240,6 +242,10 @@ pub trait GenericDisplay: fmt::Debug {
         };
         Window::from_raw(win, self.reference())
     }
+    /// Create a context using this connection.
+    fn create_context(&self) -> Result<Context, FlutterbugError> {
+        Ok(Context::from_dpy(self.reference()))
+    }
 }
 
 impl GenericDisplay for Display {
@@ -267,5 +273,5 @@ impl GenericDisplay for DisplayReference {
 
 /// Traits that should be imported in order to ensure the function of the library.
 pub mod prelude {
-    use super::{GenericDisplay, HasXID};
+    use super::{DerivesAnEvent, DerivesEvent, GenericDisplay, GenericGraphicsContext, HasXID};
 }
