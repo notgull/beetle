@@ -45,6 +45,8 @@
 
 //! X11 wrapper library.
 
+pub extern crate x11;
+
 use euclid::default::Rect;
 use std::{
     ffi::CString,
@@ -54,6 +56,8 @@ use std::{
     sync::{Arc, Weak},
 };
 use x11::xlib::{self, XID, _XGC};
+
+pub use x11::xlib::Atom;
 
 pub mod color;
 pub use color::*;
@@ -106,6 +110,7 @@ impl fmt::Debug for Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
+        println!("Currently dropping the Display!");
         unsafe { xlib::XCloseDisplay(self.raw.as_ptr()) };
     }
 }
@@ -212,7 +217,7 @@ pub trait GenericDisplay: fmt::Debug {
     ) -> Result<Window, FlutterbugError> {
         macro_rules! test_color {
             ($cname: ident) => {
-                if $cname != self.black_pixel()? || $cname != self.white_pixel()? {
+                if $cname != self.black_pixel()? && $cname != self.white_pixel()? {
                     return Err(FlutterbugError::Msg(format!(
                         "{} must be either black or white",
                         &stringify!($cname)
@@ -246,6 +251,20 @@ pub trait GenericDisplay: fmt::Debug {
     fn create_context(&self) -> Result<Context, FlutterbugError> {
         Ok(Context::from_dpy(self.reference()))
     }
+    /// Get an internal atom based upon its name.
+    fn internal_atom(
+        &self,
+        name: String,
+        create_if_exists: bool,
+    ) -> Result<xlib::Atom, FlutterbugError> {
+        Ok(unsafe {
+            xlib::XInternAtom(
+                self.raw()?.as_mut(),
+                to_cstring(name)?,
+                if create_if_exists { 1 } else { 0 },
+            )
+        })
+    }
 }
 
 impl GenericDisplay for Display {
@@ -273,5 +292,5 @@ impl GenericDisplay for DisplayReference {
 
 /// Traits that should be imported in order to ensure the function of the library.
 pub mod prelude {
-    use super::{DerivesAnEvent, DerivesEvent, GenericDisplay, GenericGraphicsContext, HasXID};
+    pub use super::{DerivesAnEvent, DerivesEvent, GenericDisplay, GenericGraphicsContext, HasXID, Drawable};
 }

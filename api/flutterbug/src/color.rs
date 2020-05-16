@@ -53,7 +53,7 @@ use std::{
 use x11::xlib;
 
 /// A color that can be used in an X11 setting.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 pub enum Color {
     /// A color consisting of the amount of red, green, and blue.
     Rgb {
@@ -66,6 +66,27 @@ pub enum Color {
     /// Refers to the actual pixel ID in the color map.
     PixelID(c_ulong),
 }
+
+impl PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        match *self {
+            Color::Rgb { r, g, b } => match *other {
+                Color::Rgb { r: r1, g: g1, b: b1 } => r == r1 && g == g1 && b == b1,
+                _ => false,
+            },
+            Color::Monochrome(m) => match *other {
+                Color::Monochrome(m1) => m == m1,
+                _ => false,
+            },
+            Color::PixelID(i) => match *other {
+                Color::PixelID(i1) => i == i1,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl Eq for Color { }
 
 impl Color {
     /// Create a new color from the RGB values.

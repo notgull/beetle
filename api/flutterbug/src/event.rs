@@ -45,9 +45,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::FlutterbugError;
+use super::{GenericDisplay, FlutterbugError};
 use std::{
     convert::TryFrom,
+    mem,
     os::raw::{c_char, c_int, c_long, c_uint},
 };
 use x11::xlib;
@@ -713,6 +714,43 @@ impl DerivesAnEvent for Event {
     }
 }
 
+macro_rules! get_inner_property {
+    ($s: ident, $prop: ident) => {
+        match *$s {
+            Event::Any(ref a) => a.$prop(),
+            Event::Key(ref k) => k.$prop(),
+            Event::Button(ref b) => b.$prop(),
+            Event::Motion(ref m) => m.$prop(),
+            Event::Crossing(ref c) => c.$prop(),
+            Event::FocusChange(ref fc) => fc.$prop(),
+            Event::Expose(ref e) => e.$prop(),
+            Event::GraphicsExpose(ref ge) => ge.$prop(),
+            Event::NoExpose(ref ne) => ne.$prop(),
+            Event::Visibility(ref v) => v.$prop(),
+            Event::CreateWindow(ref cw) => cw.$prop(),
+            Event::DestroyWindow(ref dw) => dw.$prop(),
+            Event::Unmap(ref u) => u.$prop(),
+            Event::Map(ref m) => m.$prop(),
+            Event::MapRequest(ref mr) => mr.$prop(),
+            Event::Reparent(ref r) => r.$prop(),
+            Event::Configure(ref c) => c.$prop(),
+            Event::Gravity(ref g) => g.$prop(),
+            Event::ResizeRequest(ref rr) => rr.$prop(),
+            Event::ConfigureRequest(ref cr) => cr.$prop(),
+            Event::Circulate(ref c) => c.$prop(),
+            Event::CirculateRequest(ref cr) => cr.$prop(),
+            Event::Property(ref p) => p.$prop(),
+            Event::SelectionClear(ref sc) => sc.$prop(),
+            Event::SelectionRequest(ref sr) => sr.$prop(),
+            Event::Selection(ref s) => s.$prop(),
+            Event::Colormap(ref cm) => cm.$prop(),
+            Event::ClientMessage(ref cm) => cm.$prop(),
+            Event::Mapping(ref m) => m.$prop(),
+            Event::Keymap(ref k) => k.$prop(),
+        }
+    };
+}
+
 impl DerivesEvent<xlib::XEvent> for Event {
     fn from_evstruct(x: xlib::XEvent) -> Result<Self, FlutterbugError> {
         macro_rules! evt {
@@ -770,5 +808,20 @@ impl DerivesEvent<xlib::XEvent> for Event {
             }
             EventType::SelectionNotify => evt!(Selection, SelectionEvent, selection),
         }
+    }
+}
+
+impl Event {
+    /// Get the next event from the event loop.
+    pub fn next(dpy: &dyn GenericDisplay) -> Result<Event, FlutterbugError> {
+        let mut xev: xlib::XEvent = unsafe { mem::zeroed() };
+        unsafe { xlib::XNextEvent(dpy.raw()?.as_mut(), &mut xev) };
+
+        Self::from_evstruct(xev)
+    }
+
+    /// Get the type of this event.
+    pub fn kind(&self) -> EventType {
+        get_inner_property!(self, kind)
     }
 }

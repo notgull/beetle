@@ -269,6 +269,20 @@ impl Window {
         unsafe { xlib::XSelectInput(self.dpy.raw()?.as_mut(), self.win, mask.bits()) };
         Ok(())
     }
+
+    /// Set the protocols applied to the window.
+    #[inline]
+    pub fn set_protocols(&self, protocols: &mut [xlib::Atom]) -> Result<(), FlutterbugError> {
+        unsafe {
+            xlib::XSetWMProtocols(
+                self.dpy.raw()?.as_mut(),
+                self.win,
+                protocols.as_mut_ptr(),
+                protocols.len() as c_int,
+            )
+        };
+        Ok(())
+    }
 }
 
 impl HasXID for Window {

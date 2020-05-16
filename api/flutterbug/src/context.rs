@@ -55,11 +55,13 @@ use std::{
 use x11::xlib::{self, XID};
 
 mod xctx {
-    use x11::xlib::XContext;
+    use x11::xlib::{self, XContext};
 
-    //    #[link(name = "x11")]
-    extern "C" {
-        pub fn XUniqueContext() -> XContext;
+    /// XUniqueContext is just an alias to XrmUniqueQuark
+    #[allow(non_snake_case)]
+    #[inline]
+    pub unsafe fn XUniqueContext() -> XContext {
+        xlib::XrmUniqueQuark() as XContext
     }
 }
 

@@ -47,8 +47,10 @@
  */
 
 use super::{DisplayReference, FlutterbugError, GenericDisplay, HasXID};
+use euclid::default::{Point2D, Rect};
 use std::{
     fmt,
+    os::raw::c_int,
     ptr::NonNull,
     sync::{Arc, Weak},
 };
@@ -128,12 +130,21 @@ impl Clone for GraphicsContextReference {
 
 impl GraphicsContextReference {
     #[inline]
-    fn from_raw(raw: Weak<NonNull<_XGC>>, dpy: DisplayReference, is_default: bool) -> Self {
+    pub(crate) fn from_raw(
+        raw: Weak<NonNull<_XGC>>,
+        dpy: DisplayReference,
+        is_default: bool,
+    ) -> Self {
         Self {
             raw,
             dpy,
             is_default,
         }
+    }
+
+    #[inline]
+    pub(crate) fn dpy(&self) -> &DisplayReference {
+        &self.dpy
     }
 }
 
@@ -185,4 +196,21 @@ impl GenericGraphicsContext for GraphicsContextReference {
 pub trait Drawable: HasXID + fmt::Debug {
     /// Get a reference to the graphics context that this item has stored.
     fn gc_ref(&self) -> GraphicsContextReference;
+    /// Draw a string on this object.
+    fn draw_string(&self, origin: Point2D<u32>, text: String) -> Result<(), FlutterbugError> {
+        let gc = self.gc_ref();
+        let tlen = text.len();
+        unsafe {
+            xlib::XDrawString(
+                gc.dpy().raw()?.as_mut(),
+                self.xid(),
+                gc.raw()?.as_mut(),
+                origin.x as c_int,
+                origin.y as c_int,
+                super::to_cstring(text)?,
+                tlen as c_int,
+            )
+        };
+        Ok(())
+    }
 }
