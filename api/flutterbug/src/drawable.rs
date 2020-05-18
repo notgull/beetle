@@ -49,8 +49,9 @@
 use super::{DisplayReference, FlutterbugError, GenericDisplay, HasXID};
 use euclid::default::{Point2D, Rect};
 use std::{
+    ffi::CString,
     fmt,
-    os::raw::c_int,
+    os::raw::{c_int, c_uint},
     ptr::NonNull,
     sync::{Arc, Weak},
 };
@@ -200,6 +201,8 @@ pub trait Drawable: HasXID + fmt::Debug {
     fn draw_string(&self, origin: Point2D<u32>, text: String) -> Result<(), FlutterbugError> {
         let gc = self.gc_ref();
         let tlen = text.len();
+        let cstr = unsafe { super::to_cstring(text)? };
+
         unsafe {
             xlib::XDrawString(
                 gc.dpy().raw()?.as_mut(),
@@ -207,10 +210,14 @@ pub trait Drawable: HasXID + fmt::Debug {
                 gc.raw()?.as_mut(),
                 origin.x as c_int,
                 origin.y as c_int,
-                super::to_cstring(text)?,
+                cstr,
                 tlen as c_int,
             )
         };
+
+        // make sure to deallocate the cstring
+        let _ = unsafe { CString::from_raw(cstr) };
+
         Ok(())
     }
 }

@@ -50,7 +50,10 @@
 //! a catch-all error type, and the X11Error, which holds data derived from the
 //! XErrorEvent type.
 
-use std::{ffi::NulError, sync::TryLockError};
+use std::{
+    ffi::{IntoStringError, NulError},
+    sync::{Arc, Mutex, TryLockError},
+};
 use thiserror::Error;
 use x11::xlib::XID;
 
@@ -60,6 +63,9 @@ pub enum FlutterbugError {
     /// A non-static error message.
     #[error("{0}")]
     Msg(String),
+    /// A static error message.
+    #[error("{0}")]
+    StaticMsg(&'static str),
     /// Can't cast DisplayReference to Display.
     #[error(
         "Unable to cast DisplayReference to Display. This usually means that the Display object was dropped."
@@ -68,6 +74,12 @@ pub enum FlutterbugError {
     /// Can't cast GraphicsContextReference to GraphicsContext.
     #[error("Unable to cast GraphicsContextReference to GraphicsContext.")]
     GCWasDropped,
+    /// Can't cast InputContextReference to InputContext.
+    #[error("Unable to cast InputContextReference to InputContext.")]
+    ICWasDropped,
+    /// XCreateIC returned null.
+    #[error("Unable to create input context.")]
+    ICWasNull,
     /// XOpenDisplay returned null.
     #[error("Unable to open X11 display")]
     UnableToOpenDisplay,
@@ -89,9 +101,17 @@ pub enum FlutterbugError {
     /// Context contained invalid type
     #[error("Context contained invalid type object")]
     ContextInvalidType,
+    #[error("Unable to access inner element of AnyEvent")]
+    InnerAnyEventInaccessible,
+    #[error("Display field for event is null")]
+    DisplayFieldNull,
+    #[error("Unable to retrieve input method")]
+    InputMethodNull,
     /// CString creation process failed.
     #[error("CString creation process failed")]
     NulError(#[from] NulError),
+    #[error("CString failed to convert to UTF-8 String")]
+    IntoString(#[from] IntoStringError),
 }
 
 impl<T> From<TryLockError<T>> for FlutterbugError {

@@ -50,14 +50,14 @@ pub extern crate x11;
 use euclid::default::Rect;
 use std::{
     ffi::CString,
-    fmt, mem,
-    os::raw::{c_char, c_int, c_uint, c_ulong},
+    fmt,
+    os::raw::{c_char, c_int, c_uint},
     ptr::{self, NonNull},
     sync::{Arc, Weak},
 };
-use x11::xlib::{self, XID, _XGC};
+use x11::xlib::{self, XID};
 
-pub use x11::xlib::Atom;
+pub use x11::xlib::{Atom, KeySym};
 
 pub mod color;
 pub use color::*;
@@ -71,6 +71,8 @@ pub mod event;
 pub use event::*;
 mod screen;
 pub use screen::*;
+pub mod text;
+pub use text::*;
 pub mod window;
 pub use window::*;
 
@@ -78,6 +80,14 @@ pub use window::*;
 #[inline]
 pub(crate) unsafe fn to_cstring(s: String) -> Result<*mut c_char, FlutterbugError> {
     Ok(CString::new(s)?.into_raw())
+}
+
+/// Utility function to create a string buffer of a certain length.
+#[inline]
+pub(crate) fn cstring_buffer(len: usize) -> CString {
+    let mut buffer: Vec<u8> = Vec::with_capacity(len + 1);
+    buffer.extend([b' '].iter().cycle().take(len));
+    unsafe { CString::from_vec_unchecked(buffer) }
 }
 
 /// A trait that represents that something can be transformed into an XID.
@@ -110,7 +120,6 @@ impl fmt::Debug for Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
-        println!("Currently dropping the Display!");
         unsafe { xlib::XCloseDisplay(self.raw.as_ptr()) };
     }
 }
@@ -165,16 +174,6 @@ impl DisplayReference {
     #[inline]
     pub(crate) fn from_ref(reference: Weak<NonNull<xlib::Display>>) -> Self {
         Self { reference }
-    }
-
-    /// Get the Display object that this DisplayReference refers to.
-    #[inline]
-    pub fn upgrade(&self) -> Result<Display, FlutterbugError> {
-        Ok(Display::from_raw(
-            self.reference
-                .upgrade()
-                .ok_or_else(|| FlutterbugError::DisplayWasDropped)?,
-        ))
     }
 }
 
@@ -257,13 +256,51 @@ pub trait GenericDisplay: fmt::Debug {
         name: String,
         create_if_exists: bool,
     ) -> Result<xlib::Atom, FlutterbugError> {
-        Ok(unsafe {
+        let txt = unsafe { to_cstring(name) }?;
+        let val = Ok(unsafe {
             xlib::XInternAtom(
                 self.raw()?.as_mut(),
-                to_cstring(name)?,
+                txt,
                 if create_if_exists { 1 } else { 0 },
             )
-        })
+        });
+        let _ = unsafe { CString::from_raw(txt) };
+        val
+    }
+    /// Create a new input method based on this display.
+    fn input_method(&self) -> Result<InputMethod, FlutterbugError> {
+        // try to get the XIM based on the environment vars
+        unsafe { libc::setlocale(libc::LC_ALL, (&[0]).as_ptr()) };
+        unsafe { xlib::XSetLocaleModifiers((&mut [0]).as_mut_ptr()) };
+
+        #[inline]
+        fn open_im(mut dpy: NonNull<xlib::Display>) -> xlib::XIM {
+            unsafe {
+                xlib::XOpenIM(
+                    dpy.as_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            }
+        }
+
+        let xim = NonNull::new(open_im(self.raw()?));
+        Ok(InputMethod::from_raw(
+            self.reference(),
+            match xim {
+                Some(x) => x,
+                None => {
+                    // try setting the locale to the internal input method
+                    let txt = unsafe { to_cstring(String::from("@im=none"))? };
+                    unsafe { xlib::XSetLocaleModifiers(txt) };
+                    let _ = unsafe { CString::from_raw(txt) };
+
+                    NonNull::new(open_im(self.raw()?))
+                        .ok_or_else(|| FlutterbugError::InputMethodNull)?
+                }
+            },
+        ))
     }
 }
 
@@ -286,11 +323,17 @@ impl GenericDisplay for DisplayReference {
     }
     #[inline]
     fn raw(&self) -> Result<NonNull<xlib::Display>, FlutterbugError> {
-        self.upgrade()?.raw()
+        Ok(*self
+            .reference
+            .upgrade()
+            .ok_or_else(|| FlutterbugError::DisplayWasDropped)?)
     }
 }
 
 /// Traits that should be imported in order to ensure the function of the library.
 pub mod prelude {
-    pub use super::{DerivesAnEvent, DerivesEvent, GenericDisplay, GenericGraphicsContext, HasXID, Drawable};
+    pub use super::{
+        DerivesAnEvent, DerivesEvent, Drawable, GenericDisplay, GenericGraphicsContext,
+        GenericInputContext, HasXID,
+    };
 }

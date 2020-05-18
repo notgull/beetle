@@ -71,7 +71,11 @@ impl PartialEq for Color {
     fn eq(&self, other: &Self) -> bool {
         match *self {
             Color::Rgb { r, g, b } => match *other {
-                Color::Rgb { r: r1, g: g1, b: b1 } => r == r1 && g == g1 && b == b1,
+                Color::Rgb {
+                    r: r1,
+                    g: g1,
+                    b: b1,
+                } => r == r1 && g == g1 && b == b1,
                 _ => false,
             },
             Color::Monochrome(m) => match *other {
@@ -86,7 +90,7 @@ impl PartialEq for Color {
     }
 }
 
-impl Eq for Color { }
+impl Eq for Color {}
 
 impl Color {
     /// Create a new color from the RGB values.

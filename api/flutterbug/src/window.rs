@@ -47,7 +47,8 @@
 
 use super::{
     to_cstring, ColorMap, DisplayReference, Drawable, EventMask, FlutterbugError, GenericDisplay,
-    GenericGraphicsContext, GraphicsContext, GraphicsContextReference, HasXID,
+    GenericGraphicsContext, GraphicsContext, GraphicsContextReference, HasXID, InputContext,
+    InputMethod,
 };
 use euclid::default::{Point2D, Rect, Size2D};
 use std::{
@@ -57,7 +58,7 @@ use std::{
     ptr::{self, NonNull},
     sync::Arc,
 };
-use x11::xlib::{self, _XGC};
+use x11::xlib;
 
 bitflags::bitflags! {
     #[doc = "Flags for inserting values into an XSetWindowAttributes."]
@@ -94,7 +95,6 @@ pub struct Window {
     dpy: DisplayReference,
     // window should also store a reference to its GC and Colormap
     gc: GraphicsContext,
-    colormap: ColorMap,
 }
 
 impl Window {
@@ -109,20 +109,20 @@ impl Window {
         let gc = GraphicsContext::from_raw(Arc::new(gc), dpy.clone(), false);
 
         // get the pointer to the visual item
-        let mut xattrs: xlib::XWindowAttributes = unsafe { mem::zeroed() };
-        unsafe { xlib::XGetWindowAttributes(dpy.raw()?.as_mut(), win, &mut xattrs) };
+        //        let mut xattrs: xlib::XWindowAttributes = unsafe { mem::zeroed() };
+        //        unsafe { xlib::XGetWindowAttributes(dpy.raw()?.as_mut(), win, &mut xattrs) };
 
         // create the colormap
-        let colormap = unsafe {
-            xlib::XCreateColormap(dpy.raw()?.as_mut(), win, xattrs.visual, xlib::AllocAll)
-        };
-        let colormap = ColorMap::from_raw(colormap, &dpy)?;
+        //        let colormap = unsafe {
+        //            xlib::XCreateColormap(dpy.raw()?.as_mut(), win, xattrs.visual, xlib::AllocAll)
+        //        };
+        //        let colormap = ColorMap::from_raw(colormap, &dpy)?;
 
         Ok(Self {
             win,
             dpy,
             gc,
-            colormap,
+            //            colormap,
         })
     }
 
@@ -132,11 +132,11 @@ impl Window {
         &self.gc
     }
 
-    /// Get the color map for this window.
-    #[inline]
-    pub fn colormap(&self) -> &ColorMap {
-        &self.colormap
-    }
+    //    /// Get the color map for this window.
+    //    #[inline]
+    //    pub fn colormap(&self) -> &ColorMap {
+    //        &self.colormap
+    //    }
 
     /// Get the inner number representing the window.
     #[inline]
@@ -283,6 +283,51 @@ impl Window {
         };
         Ok(())
     }
+
+    /// Clear an area on this object as per background color.
+    #[inline]
+    pub fn clear_area(
+        &self,
+        rect: Rect<u32>,
+        generate_exposure: bool,
+    ) -> Result<(), FlutterbugError> {
+        unsafe {
+            xlib::XClearArea(
+                self.dpy.raw()?.as_mut(),
+                self.xid(),
+                rect.origin.x as c_int,
+                rect.origin.y as c_int,
+                rect.size.width as c_uint,
+                rect.size.height as c_uint,
+                generate_exposure as c_int,
+            )
+        };
+        Ok(())
+    }
+
+    /// Create an input context for this window.
+    ///
+    /// TODO: input styles
+    pub fn input_context(&self, im: &InputMethod) -> Result<InputContext, FlutterbugError> {
+        let xic = unsafe {
+            xlib::XCreateIC(
+                im.raw().as_mut(),
+                xlib::XNInputStyle,
+                xlib::XIMPreeditNothing | xlib::XIMStatusNothing,
+                xlib::XNClientWindow,
+                self.window(),
+                xlib::XNFocusWindow,
+                self.window(),
+                ptr::null_mut::<c_int>(),
+            )
+        };
+        let xic = NonNull::new(xic).ok_or_else(|| FlutterbugError::ICWasNull)?;
+        Ok(InputContext::from_raw(
+            self.dpy.clone(),
+            Arc::new(xic),
+            self.window(),
+        ))
+    }
 }
 
 impl HasXID for Window {
@@ -313,9 +358,10 @@ impl Drawable for Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
+        // the gc should be dropped before the window is
+
         if let Ok(mut d) = self.dpy.raw() {
             unsafe {
-                xlib::XFreeGC(d.as_mut(), self.gc.raw().unwrap().as_mut());
                 xlib::XDestroyWindow(d.as_mut(), self.win);
             };
         }

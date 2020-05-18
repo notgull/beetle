@@ -45,13 +45,15 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{GenericDisplay, FlutterbugError};
+use super::{FlutterbugError, GenericDisplay, GenericInputContext, Window};
 use std::{
     convert::TryFrom,
-    mem,
-    os::raw::{c_char, c_int, c_long, c_uint},
+    ffi::CString,
+    fmt, mem,
+    os::raw::{c_char, c_int, c_long, c_uchar, c_uint, c_ulong},
+    ptr::{self, NonNull},
 };
-use x11::xlib;
+use x11::xlib::{self, XID};
 
 /*
 bitflags::bitflags! {
@@ -172,6 +174,45 @@ impl EventType {
             _ => return None,
         })
     }
+
+    /// Convert to a representative C integer.
+    pub fn to_int(&self) -> c_int {
+        match *self {
+            Self::KeyPress => xlib::KeyPress,
+            Self::KeyRelease => xlib::KeyRelease,
+            Self::ButtonPress => xlib::ButtonPress,
+            Self::ButtonRelease => xlib::ButtonRelease,
+            Self::MotionNotify => xlib::MotionNotify,
+            Self::EnterNotify => xlib::EnterNotify,
+            Self::LeaveNotify => xlib::LeaveNotify,
+            Self::FocusIn => xlib::FocusIn,
+            Self::FocusOut => xlib::FocusOut,
+            Self::KeymapNotify => xlib::KeymapNotify,
+            Self::Expose => xlib::Expose,
+            Self::GraphicsExpose => xlib::GraphicsExpose,
+            Self::NoExpose => xlib::NoExpose,
+            Self::CirculateRequest => xlib::CirculateRequest,
+            Self::ConfigureRequest => xlib::ConfigureRequest,
+            Self::MapRequest => xlib::MapRequest,
+            Self::ResizeRequest => xlib::ResizeRequest,
+            Self::CirculateNotify => xlib::CirculateNotify,
+            Self::ConfigureNotify => xlib::ConfigureNotify,
+            Self::CreateNotify => xlib::CreateNotify,
+            Self::DestroyNotify => xlib::DestroyNotify,
+            Self::GravityNotify => xlib::GravityNotify,
+            Self::MapNotify => xlib::MapNotify,
+            Self::MappingNotify => xlib::MappingNotify,
+            Self::ReparentNotify => xlib::ReparentNotify,
+            Self::UnmapNotify => xlib::UnmapNotify,
+            Self::VisibilityNotify => xlib::VisibilityNotify,
+            Self::ColormapEvent => xlib::ColormapNotify,
+            Self::ClientMessage => xlib::ClientMessage,
+            Self::PropertyNotify => xlib::PropertyNotify,
+            Self::SelectionClear => xlib::SelectionClear,
+            Self::SelectionNotify => xlib::SelectionNotify,
+            Self::SelectionRequest => xlib::SelectionRequest,
+        }
+    }
 }
 
 bitflags::bitflags! {
@@ -208,33 +249,49 @@ bitflags::bitflags! {
 /// Non-generic trait for event wrappers.
 pub trait DerivesAnEvent: Sized + Clone {
     /// Convert this item to an AnyEvent
-    fn as_anyevent(self) -> AnyEvent;
+    fn as_anyevent(&self) -> AnyEvent {
+        AnyEvent::from_raw(
+            self.kind(),
+            self.serial(),
+            unsafe { self.display() },
+            self.window(),
+            self.from_send_event(),
+        )
+    }
     /// Get the type of this event.
-    fn kind(&self) -> EventType {
-        self.clone().as_anyevent().kind()
-    }
+    fn kind(&self) -> EventType;
+    /// Get the serial number associated with this event.
+    fn serial(&self) -> c_ulong;
+    /// Get the connection associated with this event.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe because it circumvents the usual Flutterbug method of
+    /// using the Display/DisplayReference structure.
+    unsafe fn display(&self) -> NonNull<xlib::Display>;
     /// Get the window ID representing this event.
-    fn window(&self) -> xlib::Window {
-        self.clone().as_anyevent().window()
-    }
+    fn window(&self) -> xlib::Window;
     /// Is the event sent from the SendEvent function?
-    fn from_send_event(&self) -> bool {
-        self.clone().as_anyevent().from_send_event()
-    }
+    fn from_send_event(&self) -> bool;
 }
 
 /// Trait for event wrappers.
-pub trait DerivesEvent<EvStruct>: DerivesAnEvent {
+pub trait DerivesEvent<EvStruct: Copy>: DerivesAnEvent {
     /// Derive this item from the native struct.
     fn from_evstruct(xev: EvStruct) -> Result<Self, FlutterbugError>
     where
         Self: Sized;
+
+    /// Get the raw inner event.
+    fn inner(&self) -> Result<EvStruct, FlutterbugError>;
 }
 
 /// The default XEvent
 #[derive(Debug, Clone)]
 pub struct AnyEvent {
     kind: EventType,
+    serial: c_ulong,
+    display: NonNull<xlib::Display>,
     window: xlib::Window,
     from_send_event: bool,
 }
@@ -242,9 +299,17 @@ pub struct AnyEvent {
 impl AnyEvent {
     /// Fill out with raw details
     #[inline]
-    pub(crate) fn from_raw(kind: EventType, window: xlib::Window, fse: bool) -> Self {
+    pub(crate) fn from_raw(
+        kind: EventType,
+        serial: c_ulong,
+        display: NonNull<xlib::Display>,
+        window: xlib::Window,
+        fse: bool,
+    ) -> Self {
         Self {
             kind,
+            serial,
+            display,
             window,
             from_send_event: fse,
         }
@@ -253,12 +318,20 @@ impl AnyEvent {
 
 impl DerivesAnEvent for AnyEvent {
     #[inline]
-    fn as_anyevent(self) -> Self {
-        self
+    fn as_anyevent(&self) -> Self {
+        self.clone()
     }
     #[inline]
     fn kind(&self) -> EventType {
         self.kind
+    }
+    #[inline]
+    fn serial(&self) -> c_ulong {
+        self.serial
+    }
+    #[inline]
+    unsafe fn display(&self) -> NonNull<xlib::Display> {
+        self.display
     }
     #[inline]
     fn window(&self) -> xlib::Window {
@@ -279,9 +352,17 @@ macro_rules! anyev_impl {
                 Ok(Self {
                     kind: EventType::from_int(xev.type_)
                         .ok_or_else(|| FlutterbugError::InvalidEventType)?,
+                    serial: xev.serial,
+                    display: NonNull::new(xev.display)
+                        .ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
                     window: xev.$winname,
                     from_send_event: if xev.send_event != 0 { true } else { false },
                 })
+            }
+
+            #[inline]
+            fn inner(&self) -> Result<$xev, FlutterbugError> {
+                Err(FlutterbugError::InnerAnyEventInaccessible)
             }
         }
     };
@@ -290,7 +371,32 @@ macro_rules! anyev_impl {
     };
 }
 
-anyev_impl! {xlib::XAnyEvent}
+// manually implement the AnyEvent
+impl DerivesEvent<xlib::XAnyEvent> for AnyEvent {
+    #[inline]
+    fn from_evstruct(xev: xlib::XAnyEvent) -> Result<Self, FlutterbugError> {
+        Ok(Self {
+            kind: EventType::from_int(xev.type_)
+                .ok_or_else(|| FlutterbugError::InvalidEventType)?,
+            serial: xev.serial,
+            display: NonNull::new(xev.display).ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
+            window: xev.window,
+            from_send_event: if xev.send_event != 0 { true } else { false },
+        })
+    }
+
+    #[inline]
+    fn inner(&self) -> Result<xlib::XAnyEvent, FlutterbugError> {
+        Ok(xlib::XAnyEvent {
+            type_: self.kind.to_int(),
+            serial: self.serial,
+            display: self.display.as_ptr(),
+            window: self.window,
+            send_event: if self.from_send_event { 1 } else { 0 },
+        })
+    }
+}
+
 anyev_impl! {xlib::XKeyEvent}
 anyev_impl! {xlib::XButtonEvent}
 anyev_impl! {xlib::XMotionEvent}
@@ -319,64 +425,133 @@ anyev_impl! {xlib::XSelectionEvent[requestor]}
 anyev_impl! {xlib::XColormapEvent}
 anyev_impl! {xlib::XClientMessageEvent}
 anyev_impl! {xlib::XMappingEvent[event]}
-//anyev_impl!{xlib::XErrorEvent}
-//anyev_impl!{xlib::XKeymapEvent}
+anyev_impl! {xlib::XKeymapEvent}
+
+// manually do one for XErrorEvent
+/*impl DerivesEvent<xlib::XErrorEvent> for AnyEvent {
+    #[inline]
+    fn from_evstruct(xev: xlib::XErrorEvent) -> Result<Self, FlutterbugError> {
+        Ok(Self {
+            kind: EventType::from_int(xev.type_)
+                .ok_or_else(|| FlutterbugError::InvalidEventType)?,
+            window: xev.resourceid,
+            from_send_event: false,
+        })
+    }
+
+    #[inline]
+    fn inner(&self) -> Result<xlib::XErrorEvent, FlutterbugError> {
+        Err(FlutterbugError::StaticMsg(
+            "Unable to access inner element of AnyEvent",
+        ))
+    }
+}*/
 
 // macro to create a new event type
 macro_rules! event_type {
     ($(#[$attr: meta])* $vis: vis struct $sname: ident : $bname: ty [ $winname: ident ] {
-        $($fname: ident : $ftname: ty = $sfname: ident),*
+        $($fvis: vis $fname: ident : $ftname: ty = $sfname: ident),*
         $(,)?
-    }) => {
-        #[derive(Debug, Clone)]
-        $(#[$attr])*
-        $vis struct $sname {
-            kind: EventType,
-            window: xlib::Window,
-            from_send_event: bool,
-            $($fname: $ftname),*
-        }
+    }: $mname: ident) => {
+        $vis mod $mname {
+            #![allow(unused_imports)]
 
-        impl DerivesAnEvent for $sname {
-            #[inline]
-            fn as_anyevent(self) -> AnyEvent {
-                let Self { kind, window, from_send_event, .. } = self;
-                AnyEvent::from_raw(kind, window, from_send_event)
+            use crate::{FlutterbugError, GenericDisplay, Window};
+            use super::{DerivesAnEvent, DerivesEvent, EventType};
+            use std::{convert::TryInto, os::raw::{c_char, c_uint, c_ulong, c_int}, ptr::NonNull};
+            use x11::xlib;
+
+            #[derive(Debug, Clone)]
+            $(#[$attr])*
+            pub struct $sname {
+                kind: EventType,
+                serial: c_ulong,
+                display: NonNull<xlib::Display>,
+                window: xlib::Window,
+                from_send_event: bool,
+                inner: $bname,
+                $($fvis $fname: $ftname),*
             }
 
-            #[inline]
-            fn kind(&self) -> EventType { self.kind }
-            #[inline]
-            fn window(&self) -> xlib::Window { self.window }
-            #[inline]
-            fn from_send_event(&self) -> bool { self.from_send_event }
-        }
+            impl DerivesAnEvent for $sname {
+                #[inline]
+                fn kind(&self) -> EventType { self.kind }
+                #[inline]
+                fn serial(&self) -> c_ulong { self.serial }
+                #[inline]
+                unsafe fn display(&self) -> NonNull<xlib::Display> { self.display }
+                #[inline]
+                fn window(&self) -> xlib::Window { self.window }
+                #[inline]
+                fn from_send_event(&self) -> bool { self.from_send_event }
+            }
 
-        impl DerivesEvent<$bname> for $sname {
-            #[inline]
-            fn from_evstruct(ev: $bname) -> Result<Self, FlutterbugError> {
-                Ok(Self {
-                    kind: EventType::from_int(ev.type_).ok_or_else(|| FlutterbugError::InvalidEventType)?,
-                    window: ev.$winname,
-                    from_send_event: if ev.send_event != 0 { true } else { false },
-                    $($fname: ev.$sfname as $ftname),*
-                })
+            impl DerivesEvent<$bname> for $sname {
+                #[inline]
+                fn from_evstruct(ev: $bname) -> Result<Self, FlutterbugError> {
+                    Ok(Self {
+                        kind: EventType::from_int(ev.type_).ok_or_else(|| FlutterbugError::InvalidEventType)?,
+                        serial: ev.serial,
+                        display: NonNull::new(ev.display).ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
+                        window: ev.$winname,
+                        from_send_event: if ev.send_event != 0 { true } else { false },
+                        inner: ev,
+                        $($fname: ev.$sfname.try_into().unwrap_or_else(|_|
+                            panic!("Tried to convert {} and failed", stringify!($fname))
+                        )),*
+                    })
+                }
+
+                #[inline]
+                fn inner(&self) -> Result<$bname, FlutterbugError> { Ok(self.inner) }
+            }
+
+            type OurStruct = $bname;
+
+            impl $sname {
+               $(#[inline] pub fn $fname(&self) -> $ftname { self.$fname })*
+
+                #[inline]
+                pub fn new(
+                    kind: EventType,
+                    serial: c_ulong,
+                    display: &dyn GenericDisplay,
+                    sender_window: &Window,
+                    fse: bool,
+                    $($fname: $ftname),*
+                ) -> Result<Self, FlutterbugError> {
+                    let inner = OurStruct {
+                        type_: kind.to_int(),
+                        serial,
+                        display: display.raw()?.as_ptr(),
+                        $winname: sender_window.window(),
+                        send_event: if fse { 1 } else { 0 },
+                        $($sfname: $fname.try_into().unwrap_or_else(|_|
+                            panic!("Tried to convert {} and failed", stringify!($fname))
+                        )),*
+                    };
+
+                    Ok(Self {
+                        kind, serial, display: display.raw()?, window: sender_window.window(),
+                        from_send_event: fse,
+                        inner,
+                        $($fname),*
+                    })
+                }
             }
         }
 
-        impl $sname {
-            $(#[inline] pub fn $fname(&self) -> $ftname { self.$fname })*
-        }
+        $vis use $mname::*;
     };
     ($(#[$attr: meta])* $vis: vis struct $sname: ident : $bname: ty {
-        $($fname: ident : $ftname: ty = $sfname: ident),*
+        $($fvis: vis $fname: ident : $ftname: ty = $sfname: ident),*
         $(,)?
-    }) => {
+    }: $mname: ident) => {
         event_type! {
             $(#[$attr])*
             $vis struct $sname : $bname [ window ] {
-                $($fname: $ftname = $sfname),*
-            }
+                $($fvis $fname: $ftname = $sfname),*
+            } : $mname
         }
     };
 }
@@ -386,12 +561,105 @@ event_type! {
         root: xlib::Window = root,
         subwindow: xlib::Window = subwindow,
         time: xlib::Time = time,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         x_root: u32 = x_root,
         y_root: u32 = y_root,
-        state: c_uint = state,
+        pub state: c_uint = state,
         keycode: c_uint = keycode,
+        same_screen: xlib::Bool = same_screen,
+    }: key_event
+}
+
+bitflags::bitflags! {
+    #[doc = "Represents function keys that can be depressed"]
+    pub struct FunctionKeys : c_uint {
+        const CONTROL = xlib::ControlMask;
+        const ALT = 8;
+        const SHIFT = xlib::ShiftMask;
+        const CAPS_LOCK = 2;
+    }
+}
+
+impl KeyEvent {
+    /// Add or remove a function key.
+    #[inline]
+    pub fn set_function(&mut self, f: FunctionKeys, subtract: bool) {
+        if subtract {
+            self.state &= !f.bits();
+        } else {
+            self.state |= f.bits();
+        }
+    }
+
+    /// Lookup the keysym and text that this symbol corresponds to.
+    #[inline]
+    pub fn lookup(&self) -> Result<(xlib::KeySym, String), FlutterbugError> {
+        const BUFFER_SIZE: usize = 50;
+        let mut inner = self.inner()?;
+        let buffer = crate::cstring_buffer(BUFFER_SIZE);
+        let buffer = buffer.into_raw();
+        let mut ks = 0;
+
+        let _bsize = unsafe {
+            xlib::XLookupString(
+                &mut inner,
+                buffer,
+                BUFFER_SIZE as c_int - 1,
+                &mut ks,
+                ptr::null_mut(),
+            )
+        };
+        let res = unsafe { CString::from_raw(buffer) }.into_string()?;
+
+        Ok((ks, res))
+    }
+
+    /// Lookup the keysym and text that this symbols corresponds to, with full UTF-8 support.
+    #[inline]
+    pub fn lookup_utf8(
+        &self,
+        ic: &dyn GenericInputContext,
+    ) -> Result<(Option<xlib::KeySym>, Option<String>), FlutterbugError> {
+        const BUFFER_SIZE: usize = 50;
+        let mut inner = self.inner()?;
+        let buffer = crate::cstring_buffer(BUFFER_SIZE);
+        let buffer = buffer.into_raw();
+        let mut status = 0;
+        let mut ks = 0;
+
+        let _bsize = unsafe {
+            xlib::Xutf8LookupString(
+                ic.raw()?.as_mut(),
+                &mut inner,
+                buffer,
+                BUFFER_SIZE as c_int - 1,
+                &mut ks,
+                &mut status,
+            )
+        };
+
+        let mut res_str = None;
+        let mut res_ks = None;
+
+        match status {
+            xlib::XBufferOverflow => {
+                return Err(FlutterbugError::StaticMsg("Did not allocate enough memory"));
+            }
+            xlib::XLookupBoth | xlib::XLookupChars => {
+                res_str = Some(unsafe { CString::from_raw(buffer) }.into_string()?);
+            }
+            _ => { /* do nothing */ }
+        }
+
+        match status {
+            xlib::XLookupBoth | xlib::XLookupKeySym => {
+                res_ks = Some(ks);
+            }
+            _ => { /* do nothing */ }
+        }
+
+        Ok((res_ks, res_str))
     }
 }
 
@@ -400,13 +668,14 @@ event_type! {
         root: xlib::Window = root,
         subwindow: xlib::Window = subwindow,
         time: xlib::Time = time,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         x_root: u32 = x_root,
         y_root: u32 = y_root,
         state: c_uint = state,
         button: c_uint = button,
-    }
+        same_screen: xlib::Bool = same_screen,
+    }: button_event
 }
 
 event_type! {
@@ -414,13 +683,14 @@ event_type! {
         root: xlib::Window = root,
         subwindow: xlib::Window = subwindow,
         time: xlib::Time = time,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         x_root: u32 = x_root,
         y_root: u32 = y_root,
         state: c_uint = state,
         is_hint: c_char = is_hint,
-    }
+        same_screen: xlib::Bool = same_screen,
+    }: motion_event
 }
 
 event_type! {
@@ -428,155 +698,162 @@ event_type! {
         root: xlib::Window = root,
         subwindow: xlib::Window = subwindow,
         time: xlib::Time = time,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         x_root: u32 = x_root,
         y_root: u32 = y_root,
         state: c_uint = state,
         mode: c_int = mode,
         detail: c_int = detail,
-    }
+        focus: xlib::Bool = focus,
+        same_screen: xlib::Bool = same_screen,
+    }: crossing_event
 }
 
 event_type! {
     pub struct FocusChangeEvent : xlib::XFocusChangeEvent {
         mode: c_int = mode,
         detail: c_int = detail,
-    }
+    }: focus_change_event
 }
 
 event_type! {
     pub struct ExposeEvent : xlib::XExposeEvent {
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         width: u32 = width,
         height: u32 = height,
         count: i32 = count,
-    }
+    }: expose_event
 }
 
 event_type! {
    pub struct NoExposeEvent : xlib::XNoExposeEvent[drawable] {
        major_code: c_int = major_code,
        minor_code: c_int = minor_code,
-   }
+   }: no_expose_event
 }
 
 event_type! {
     pub struct GraphicsExposeEvent : xlib::XGraphicsExposeEvent[drawable] {
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         width: u32 = width,
         height: u32 = height,
         count: i32 = count,
         major_code: c_int = major_code,
         minor_code: c_int = minor_code,
-    }
+    }: graphics_expose_event
 }
 
 event_type! {
     pub struct ConfigureEvent : xlib::XConfigureEvent[event] {
         child: xlib::Window = window,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         width: u32 = width,
         height: u32 = height,
         border_width: u32 = border_width,
         above: xlib::Window = above,
-    }
+        override_redirect: xlib::Bool = override_redirect,
+    }: configure_event
 }
 
 event_type! {
     pub struct VisibilityEvent : xlib::XVisibilityEvent {
         state: c_int = state,
-    }
+    }: visibility_event
 }
 
 event_type! {
     pub struct CreateWindowEvent : xlib::XCreateWindowEvent[parent] {
         child: xlib::Window = window,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         width: u32 = width,
         height: u32 = height,
         border_width: u32 = border_width,
-    }
+        override_redirect: xlib::Bool = override_redirect,
+    }: create_window_event
 }
 
 event_type! {
     pub struct DestroyWindowEvent : xlib::XDestroyWindowEvent[event] {
         child: xlib::Window = window,
-    }
+    }: destroy_window_event
 }
 
 event_type! {
     pub struct UnmapEvent : xlib::XUnmapEvent[event] {
         child: xlib::Window = window,
-    }
+        from_configure: xlib::Bool = from_configure,
+    }: unmap_event
 }
 
 event_type! {
     pub struct MapEvent : xlib::XMapEvent[event] {
         child: xlib::Window = window,
-    }
+        override_redirect: xlib::Bool = override_redirect,
+    }: map_event
 }
 
 event_type! {
-    pub struct MapRequestEvent : xlib::XMapRequestEvent {
+    pub struct MapRequestEvent : xlib::XMapRequestEvent[parent] {
         child: xlib::Window = window,
-    }
+    }: map_request_event
 }
 
 event_type! {
     pub struct ReparentEvent : xlib::XReparentEvent[event] {
         child: xlib::Window = window,
         parent: xlib::Window = parent,
-        x: u32 = x,
-        y: u32 = y,
-    }
+        x: i32 = x,
+        y: i32 = y,
+        override_redirect: xlib::Bool = override_redirect,
+    }: reparent_event
 }
 
 event_type! {
     pub struct GravityEvent : xlib::XGravityEvent[event] {
         child: xlib::Window = window,
-        x: u32 = x,
-        y: u32 = y,
-    }
+        x: i32 = x,
+        y: i32 = y,
+    }: gravity_event
 }
 
 event_type! {
     pub struct ResizeRequestEvent : xlib::XResizeRequestEvent {
         width: u32 = width,
         height: u32 = height,
-    }
+    }: resize_request_event
 }
 
 event_type! {
     pub struct ConfigureRequestEvent : xlib::XConfigureRequestEvent {
         parent: xlib::Window = parent,
-        x: u32 = x,
-        y: u32 = y,
+        x: i32 = x,
+        y: i32 = y,
         width: u32 = width,
         height: u32 = height,
         border_width: u32 = border_width,
         above: xlib::Window = above,
         detail: c_int = detail,
         value_mask: c_uint = value_mask,
-    }
+    }: configure_request_event
 }
 
 event_type! {
     pub struct CirculateEvent : xlib::XCirculateEvent {
         event: xlib::Window = event,
         place: c_int = place,
-    }
+    }: circulate_event
 }
 
 event_type! {
     pub struct CirculateRequestEvent : xlib::XCirculateRequestEvent {
         parent: xlib::Window = parent,
         place: c_int = place,
-    }
+    }: circulate_request_event
 }
 
 event_type! {
@@ -584,14 +861,14 @@ event_type! {
         atom: xlib::Atom = atom,
         time: xlib::Time = time,
         state: c_int = state,
-    }
+    }: property_event
 }
 
 event_type! {
     pub struct SelectionClearEvent : xlib::XSelectionClearEvent {
         selection: xlib::Atom = selection,
         time: xlib::Time = time,
-    }
+    }: selection_clear_event
 }
 
 event_type! {
@@ -601,7 +878,7 @@ event_type! {
         target: xlib::Atom = target,
         property: xlib::Atom = property,
         time: xlib::Time = time,
-    }
+    }: selection_request_event
 }
 
 event_type! {
@@ -610,14 +887,15 @@ event_type! {
         target: xlib::Atom = target,
         property: xlib::Atom = property,
         time: xlib::Time = time,
-    }
+    }: selection_event
 }
 
 event_type! {
     pub struct ColormapEvent : xlib::XColormapEvent {
         colormap: xlib::Colormap = colormap,
         state: c_int = state,
-    }
+        is_new_map: xlib::Bool = new,
+    }: colormap_event
 }
 
 event_type! {
@@ -625,7 +903,7 @@ event_type! {
         message_type: xlib::Atom = message_type,
         format: c_int = format,
         data: xlib::ClientMessageData = data,
-    }
+    }: client_message_event
 }
 
 event_type! {
@@ -633,12 +911,48 @@ event_type! {
         request: c_int = request,
         first_keycode: c_int = first_keycode,
         count: i32 = count,
-    }
+    }: mapping_event
 }
 
 event_type! {
     pub struct KeymapEvent : xlib::XKeymapEvent {
         keys: [c_char; 32] = key_vector
+    }: keymap_event
+}
+
+/// The event signifying an X11 error.
+#[derive(Clone)]
+pub struct ErrorEvent {
+    kind: EventType,
+    display: NonNull<xlib::Display>,
+    resource_id: XID,
+    serial: c_ulong,
+    error_code: c_uchar,
+    minor_code: c_uchar,
+    request: c_uchar,
+    err_text: String,
+}
+
+impl DerivesAnEvent for ErrorEvent {
+    #[inline]
+    fn kind(&self) -> EventType {
+        self.kind
+    }
+    #[inline]
+    fn window(&self) -> xlib::Window {
+        self.resource_id
+    }
+    #[inline]
+    fn from_send_event(&self) -> bool {
+        false
+    }
+    #[inline]
+    unsafe fn display(&self) -> NonNull<xlib::Display> {
+        self.display
+    }
+    #[inline]
+    fn serial(&self) -> c_ulong {
+        self.serial
     }
 }
 
@@ -675,43 +989,6 @@ pub enum Event {
     ClientMessage(ClientMessageEvent),
     Mapping(MappingEvent),
     Keymap(KeymapEvent),
-}
-
-impl DerivesAnEvent for Event {
-    fn as_anyevent(self) -> AnyEvent {
-        match self {
-            Event::Any(a) => a,
-            Event::Key(k) => k.as_anyevent(),
-            Event::Button(b) => b.as_anyevent(),
-            Event::Motion(m) => m.as_anyevent(),
-            Event::Crossing(c) => c.as_anyevent(),
-            Event::FocusChange(fc) => fc.as_anyevent(),
-            Event::Expose(e) => e.as_anyevent(),
-            Event::GraphicsExpose(ge) => ge.as_anyevent(),
-            Event::NoExpose(ne) => ne.as_anyevent(),
-            Event::Visibility(v) => v.as_anyevent(),
-            Event::CreateWindow(cw) => cw.as_anyevent(),
-            Event::DestroyWindow(dw) => dw.as_anyevent(),
-            Event::Unmap(u) => u.as_anyevent(),
-            Event::Map(m) => m.as_anyevent(),
-            Event::MapRequest(mr) => mr.as_anyevent(),
-            Event::Reparent(r) => r.as_anyevent(),
-            Event::Configure(c) => c.as_anyevent(),
-            Event::Gravity(g) => g.as_anyevent(),
-            Event::ResizeRequest(rr) => rr.as_anyevent(),
-            Event::ConfigureRequest(cr) => cr.as_anyevent(),
-            Event::Circulate(c) => c.as_anyevent(),
-            Event::CirculateRequest(cr) => cr.as_anyevent(),
-            Event::Property(p) => p.as_anyevent(),
-            Event::SelectionClear(sc) => sc.as_anyevent(),
-            Event::SelectionRequest(sr) => sr.as_anyevent(),
-            Event::Selection(s) => s.as_anyevent(),
-            Event::Colormap(cm) => cm.as_anyevent(),
-            Event::ClientMessage(cm) => cm.as_anyevent(),
-            Event::Mapping(m) => m.as_anyevent(),
-            Event::Keymap(k) => k.as_anyevent(),
-        }
-    }
 }
 
 macro_rules! get_inner_property {
@@ -809,6 +1086,52 @@ impl DerivesEvent<xlib::XEvent> for Event {
             EventType::SelectionNotify => evt!(Selection, SelectionEvent, selection),
         }
     }
+
+    #[allow(unused_unsafe)]
+    fn inner(&self) -> Result<xlib::XEvent, FlutterbugError> {
+        let mut xev: xlib::XEvent = unsafe { mem::zeroed() };
+
+        macro_rules! set_evt {
+            ($item: ident, $field: ident) => {
+                unsafe { xev.$field = $item.inner()? }
+            };
+        }
+
+        match *self {
+            Event::Any(ref a) => set_evt!(a, any),
+            Event::Button(ref b) => set_evt!(b, button),
+            Event::Key(ref k) => set_evt!(k, key),
+            Event::Motion(ref m) => set_evt!(m, motion),
+            Event::FocusChange(ref f) => set_evt!(f, focus_change),
+            Event::Crossing(ref c) => set_evt!(c, crossing),
+            Event::Keymap(ref km) => set_evt!(km, keymap),
+            Event::Expose(ref e) => set_evt!(e, expose),
+            Event::GraphicsExpose(ref ge) => set_evt!(ge, graphics_expose),
+            Event::NoExpose(ref ne) => set_evt!(ne, no_expose),
+            Event::CirculateRequest(ref ce) => set_evt!(ce, circulate_request),
+            Event::ConfigureRequest(ref ce) => set_evt!(ce, configure_request),
+            Event::MapRequest(ref me) => set_evt!(me, map_request),
+            Event::ResizeRequest(ref rr) => set_evt!(rr, resize_request),
+            Event::Circulate(ref cn) => set_evt!(cn, circulate),
+            Event::Configure(ref cn) => set_evt!(cn, configure),
+            Event::CreateWindow(ref cn) => set_evt!(cn, create_window),
+            Event::DestroyWindow(ref dn) => set_evt!(dn, destroy_window),
+            Event::Gravity(ref gn) => set_evt!(gn, gravity),
+            Event::Map(ref m) => set_evt!(m, map),
+            Event::Mapping(ref m) => set_evt!(m, mapping),
+            Event::Reparent(ref r) => set_evt!(r, reparent),
+            Event::Unmap(ref u) => set_evt!(u, unmap),
+            Event::Visibility(ref v) => set_evt!(v, visibility),
+            Event::Colormap(ref c) => set_evt!(c, colormap),
+            Event::ClientMessage(ref cm) => set_evt!(cm, client_message),
+            Event::Property(ref p) => set_evt!(p, property),
+            Event::SelectionClear(ref sc) => set_evt!(sc, selection_clear),
+            Event::SelectionRequest(ref sr) => set_evt!(sr, selection_request),
+            Event::Selection(ref sn) => set_evt!(sn, selection),
+        }
+
+        Ok(xev)
+    }
 }
 
 impl Event {
@@ -820,8 +1143,61 @@ impl Event {
         Self::from_evstruct(xev)
     }
 
-    /// Get the type of this event.
-    pub fn kind(&self) -> EventType {
+    /// Send this event into an event loop.
+    #[inline]
+    pub fn send(
+        self,
+        dpy: &dyn GenericDisplay,
+        target: &Window,
+        propogate: bool,
+        mask: EventMask,
+    ) -> Result<(), FlutterbugError> {
+        let mut ev = self.inner()?;
+        unsafe {
+            xlib::XSendEvent(
+                dpy.raw()?.as_mut(),
+                target.window(),
+                if propogate { 1 } else { 0 },
+                mask.bits(),
+                &mut ev,
+            )
+        };
+        Ok(())
+    }
+
+    /// Filter this event if it is a raw event.
+    #[inline]
+    pub fn filter(&self, window: Option<&Window>) -> Result<bool, FlutterbugError> {
+        let mut inner = self.inner()?;
+        Ok(unsafe {
+            xlib::XFilterEvent(
+                &mut inner,
+                match window {
+                    Some(w) => w.window(),
+                    None => 0,
+                },
+            )
+        } != 0)
+    }
+}
+
+impl DerivesAnEvent for Event {
+    fn kind(&self) -> EventType {
         get_inner_property!(self, kind)
+    }
+
+    fn window(&self) -> xlib::Window {
+        get_inner_property!(self, window)
+    }
+
+    fn from_send_event(&self) -> bool {
+        get_inner_property!(self, from_send_event)
+    }
+
+    fn serial(&self) -> c_ulong {
+        get_inner_property!(self, serial)
+    }
+    unsafe fn display(&self) -> NonNull<xlib::Display> {
+        get_inner_property!(self, display)
     }
 }
