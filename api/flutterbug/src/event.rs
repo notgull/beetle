@@ -1171,6 +1171,18 @@ impl Event {
         Ok(())
     }
 
+    /// Wait for a map event.
+    #[inline]
+    pub fn wait_for_map(display: &dyn GenericDisplay) -> Result<(), FlutterbugError> {
+        'mapwait: loop {
+            if let Self::Map(_m) = Self::next(display)? {
+                break 'mapwait;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Filter this event if it is a raw event.
     #[inline]
     pub fn filter(&self, window: Option<&Window>) -> Result<bool, FlutterbugError> {

@@ -279,13 +279,11 @@ impl Window {
             };
         }
         macro_rules! dealloc_cstr {
-            ($name: ident) => {
-                { 
-                    if !$name.is_null() {
-                        let _ = unsafe { CString::from_raw($name) }; 
-                    }
+            ($name: ident) => {{
+                if !$name.is_null() {
+                    let _ = unsafe { CString::from_raw($name) };
                 }
-            };
+            }};
         }
 
         // put it in the form that it expects

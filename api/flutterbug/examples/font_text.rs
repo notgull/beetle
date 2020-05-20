@@ -45,7 +45,10 @@
  */
 
 use euclid::default::{Point2D, Size2D};
-use flutterbug::{prelude::*, Atom, Display, Event, EventMask, Pixmap, Window};
+use flutterbug::{
+    prelude::*, Atom, Display, Event, EventMask, EventType, ExposeEvent, FlutterbugError,
+    FunctionKeys, Pixmap, Window,
+};
 use font_kit::{
     canvas::{Canvas, Format, RasterizationOptions},
     family_name::FamilyName,
@@ -58,8 +61,9 @@ use pathfinder_geometry::{
     transform2d::Transform2F,
     vector::{Vector2F, Vector2I},
 };
-use std::{collections::HashMap, env, os::raw::c_char};
+use std::{collections::HashMap, convert::TryInto, env};
 
+// load a char into the pixmap hashmap
 fn load_char(
     display: &Display,
     window: &Window,
@@ -73,7 +77,9 @@ fn load_char(
 
     // rasterize the canvas
     let mut canvas = Canvas::new(Vector2I::splat(32), Format::A8);
-    let glyph = font.glyph_for_char(c).unwrap();
+    let glyph = font
+        .glyph_for_char(c)
+        .ok_or_else(|| FlutterbugError::StaticMsg("Key not found"))?;
     font.rasterize_glyph(
         &mut canvas,
         glyph,
@@ -83,23 +89,17 @@ fn load_char(
         RasterizationOptions::GrayscaleAa,
     )?;
 
-    //    println!("{:?}", &canvas.pixels);
-
-    const DEPTH: u32 = 1;
+    let depth = display.default_depth()?.try_into().unwrap();
 
     // convert the canvas into a pixmap
-    let pix = window.pixmap(Size2D::new(32, 32), DEPTH)?;
+    let pix = window.pixmap(Size2D::new(32, 32), depth)?;
     let img = pix.image(Point2D::zero(), Size2D::new(32, 32))?;
- 
+
     for y in 0i32..32 {
         for x in 0i32..32 {
             let loc = (32 * y as usize) + x as usize;
-            img.put_pixel(
-                Point2D::new(x, y),
-                canvas.pixels[loc],
-                canvas.pixels[loc],
-                canvas.pixels[loc],
-            )?;
+            let bright = std::u8::MAX - canvas.pixels[loc];
+            img.put_pixel(Point2D::new(x, y), bright, bright, bright)?;
         }
     }
 
@@ -120,12 +120,17 @@ fn main() -> Result<(), anyhow::Error> {
         display.default_white_pixel()?,
     )?;
 
-    window.select_input(EventMask::EXPOSURE_MASK)?;
+    window.select_input(EventMask::EXPOSURE_MASK | EventMask::KEY_PRESS_MASK)?;
     window.map(true)?;
     window.set_standard_properties(Some(String::from("Test | Font")), None, None, false)?;
 
     let wdw = display.internal_atom(String::from("WM_DELETE_WINDOW"), false)?;
     window.set_protocols(&mut [wdw])?;
+
+    // needed for key inputs
+    let im = display.input_method()?;
+    let ic = window.input_context(&im)?;
+    let mut key: Option<String> = None;
 
     // get the string to render from args
     let text = env::args()
@@ -153,6 +158,8 @@ fn main() -> Result<(), anyhow::Error> {
 
         match ev {
             Event::Expose(_e) => {
+                window.clear_area(Point2D::zero(), Size2D::new(400, 200), false)?;
+
                 // draw the text
                 text.chars()
                     .enumerate()
@@ -166,6 +173,44 @@ fn main() -> Result<(), anyhow::Error> {
                         )
                     })
                     .collect::<Result<_, _>>()?;
+
+                // draw the currently pressed key
+                if let Some(ref k) = &key {
+                    let c = k.chars().nth(0).unwrap();
+
+                    if let Err(_e) = load_char(&display, &window, &font, &mut chars, c) {
+                        continue 'el;
+                    }
+
+                    let pix = chars.get(&c).unwrap();
+                    window.copy_area(
+                        pix,
+                        Point2D::new(0, 0),
+                        Point2D::new(20, 52),
+                        Size2D::new(32, 32),
+                    )?
+                }
+            }
+            Event::Key(mut k) => {
+                k.set_function(FunctionKeys::CONTROL, false);
+                let (_, kstr) = k.lookup_utf8(&ic)?;
+                key = kstr;
+
+                // send expose event
+                let ev = ExposeEvent::new(
+                    EventType::Expose,
+                    0,
+                    &display,
+                    &window,
+                    true,
+                    0,
+                    0,
+                    400,
+                    200,
+                    1,
+                )?;
+                let ev = Event::Expose(ev);
+                ev.send(&display, &window, true, EventMask::EXPOSURE_MASK)?;
             }
             Event::ClientMessage(cm) => {
                 if AsRef::<[Atom]>::as_ref(&cm.data())[0] == wdw {

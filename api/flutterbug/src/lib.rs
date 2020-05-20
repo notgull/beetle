@@ -50,8 +50,7 @@ pub extern crate x11;
 use euclid::default::{Point2D, Rect, Size2D};
 use std::{
     ffi::CString,
-    fmt,
-    mem,
+    fmt, mem,
     os::raw::{c_char, c_int, c_uint},
     ptr::{self, NonNull},
     sync::{Arc, Weak},
@@ -399,6 +398,21 @@ pub trait GenericDisplay: fmt::Debug {
         mem::forget(boxed);
 
         Ok(Image::from_raw(Arc::new(img)))
+    }
+
+    fn sync(&self, s: bool) -> Result<(), FlutterbugError> {
+        unsafe { xlib::XSync(self.raw()?.as_mut(), if s { 1 } else { 0 }) };
+        Ok(())
+    }
+
+    /// Get the depth for a particular screen.
+    fn depth(&self, screen: Screen) -> Result<i32, FlutterbugError> {
+        Ok(unsafe { xlib::XDefaultDepth(self.raw()?.as_mut(), screen.value()) })
+    }
+
+    /// Get the depth for the default screen.
+    fn default_depth(&self) -> Result<i32, FlutterbugError> {
+        self.depth(self.default_screen()?)
     }
 }
 

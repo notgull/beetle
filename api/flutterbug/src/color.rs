@@ -186,7 +186,7 @@ impl ColorMap {
         // if clr is a color id already and we're in debug mode, check to see if it's
         // in the pixel list before returning
         let tuple: (c_ushort, c_ushort, c_ushort) = match clr {
-            Color::PixelID(p) => {
+            Color::PixelID(_p) => {
                 /*                #[cfg(debug_assertions)] // don't bother checking if we're not debugging
                 {
                     if p != self.black_pixel
