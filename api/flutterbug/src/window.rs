@@ -48,13 +48,14 @@
 use super::{
     to_cstring, ColorMap, DisplayReference, Drawable, EventMask, FlutterbugError, GenericDisplay,
     GenericGraphicsContext, GraphicsContext, GraphicsContextReference, HasXID, InputContext,
-    InputMethod,
+    InputMethod, Pixmap,
 };
 use euclid::default::{Point2D, Rect, Size2D};
 use std::{
+    env,
     ffi::CString,
     mem,
-    os::raw::{c_int, c_uint, c_ulong, c_ushort},
+    os::raw::{c_char, c_int, c_uint, c_ulong, c_ushort},
     ptr::{self, NonNull},
     sync::Arc,
 };
@@ -108,15 +109,22 @@ impl Window {
         let gc = NonNull::new(gc).ok_or_else(|| FlutterbugError::UnableToCreateGC)?;
         let gc = GraphicsContext::from_raw(Arc::new(gc), dpy.clone(), false);
 
+        /*
         // get the pointer to the visual item
-        //        let mut xattrs: xlib::XWindowAttributes = unsafe { mem::zeroed() };
-        //        unsafe { xlib::XGetWindowAttributes(dpy.raw()?.as_mut(), win, &mut xattrs) };
+        let mut xattrs: xlib::XWindowAttributes = unsafe { mem::zeroed() };
+        unsafe { xlib::XGetWindowAttributes(dpy.raw()?.as_mut(), win, &mut xattrs) };
 
-        // create the colormap
-        //        let colormap = unsafe {
-        //            xlib::XCreateColormap(dpy.raw()?.as_mut(), win, xattrs.visual, xlib::AllocAll)
-        //        };
-        //        let colormap = ColorMap::from_raw(colormap, &dpy)?;
+        // create the colormap for the window
+        let colormap = unsafe {
+             xlib::XCreateColormap(dpy.raw()?.as_mut(), win, xattrs.visual, xlib::AllocAll)
+        };
+
+        let mut xsetattrs = xlib::XSetWindowAttributes {
+            colormap,
+            ..unsafe { mem::zeroed() }
+        };
+        unsafe { xlib::XChangeWindowAttributes(dpy.raw()?.as_mut(), win, xlib::CWColormap, &mut xsetattrs) };
+        */
 
         Ok(Self {
             win,
@@ -194,7 +202,7 @@ impl Window {
 
     /// Move the window to a different location.
     #[inline]
-    pub fn set_position(&self, pt: Point2D<u32>) -> Result<(), FlutterbugError> {
+    pub fn set_position(&self, pt: Point2D<i32>) -> Result<(), FlutterbugError> {
         unsafe {
             xlib::XMoveWindow(
                 self.dpy.raw()?.as_mut(),
@@ -222,15 +230,15 @@ impl Window {
 
     /// Change the window's bounds overall.
     #[inline]
-    pub fn set_bounds(&self, bnds: Rect<u32>) -> Result<(), FlutterbugError> {
+    pub fn set_bounds(&self, pt: Point2D<i32>, sz: Size2D<u32>) -> Result<(), FlutterbugError> {
         unsafe {
             xlib::XMoveResizeWindow(
                 self.dpy.raw()?.as_mut(),
                 self.win,
-                bnds.origin.x as c_int,
-                bnds.origin.y as c_int,
-                bnds.size.width as c_uint,
-                bnds.size.height as c_uint,
+                pt.x as c_int,
+                pt.y as c_int,
+                sz.width as c_uint,
+                sz.height as c_uint,
             )
         };
         Ok(())
@@ -259,7 +267,68 @@ impl Window {
         &mut self,
         window_name: Option<String>,
         icon_name: Option<String>,
+        icon: Option<&Pixmap>,
+        set_argv: bool,
     ) -> Result<(), FlutterbugError> {
+        macro_rules! create_cstr {
+            ($name: ident) => {
+                let $name = match $name {
+                    Some(i) => unsafe { to_cstring(i)? },
+                    None => ptr::null_mut(),
+                };
+            };
+        }
+        macro_rules! dealloc_cstr {
+            ($name: ident) => {
+                { 
+                    if !$name.is_null() {
+                        let _ = unsafe { CString::from_raw($name) }; 
+                    }
+                }
+            };
+        }
+
+        // put it in the form that it expects
+        create_cstr!(window_name);
+        create_cstr!(icon_name);
+
+        let icon = match icon {
+            Some(i) => i.xid(),
+            None => 0,
+        };
+
+        let tuple = if set_argv {
+            // map env::args() to a c argv**
+            let mut args = env::args()
+                .map(|a| unsafe { to_cstring(a) })
+                .collect::<Result<Vec<*mut c_char>, FlutterbugError>>()?;
+            let argv = args.as_mut_ptr();
+            let argc = args.len();
+
+            (args, argv, argc)
+        } else {
+            (vec![], ptr::null_mut(), 0)
+        };
+        let (args, argv, argc) = tuple;
+
+        unsafe {
+            xlib::XSetStandardProperties(
+                self.dpy.raw()?.as_mut(),
+                self.win,
+                window_name,
+                icon_name,
+                icon,
+                argv,
+                argc as c_int,
+                ptr::null_mut(),
+            )
+        };
+
+        // dealloc cstring
+        dealloc_cstr!(window_name);
+        dealloc_cstr!(icon_name);
+        args.into_iter().for_each(|i| dealloc_cstr!(i));
+
         Ok(())
     }
 
@@ -288,17 +357,18 @@ impl Window {
     #[inline]
     pub fn clear_area(
         &self,
-        rect: Rect<u32>,
+        pt: Point2D<i32>,
+        sz: Size2D<u32>,
         generate_exposure: bool,
     ) -> Result<(), FlutterbugError> {
         unsafe {
             xlib::XClearArea(
                 self.dpy.raw()?.as_mut(),
                 self.xid(),
-                rect.origin.x as c_int,
-                rect.origin.y as c_int,
-                rect.size.width as c_uint,
-                rect.size.height as c_uint,
+                pt.x as c_int,
+                pt.y as c_int,
+                sz.width as c_uint,
+                sz.height as c_uint,
                 generate_exposure as c_int,
             )
         };
@@ -312,11 +382,11 @@ impl Window {
         let xic = unsafe {
             xlib::XCreateIC(
                 im.raw().as_mut(),
-                xlib::XNInputStyle,
+                xlib::XNInputStyle_0.as_ptr(),
                 xlib::XIMPreeditNothing | xlib::XIMStatusNothing,
-                xlib::XNClientWindow,
+                xlib::XNClientWindow_0.as_ptr(),
                 self.window(),
-                xlib::XNFocusWindow,
+                xlib::XNFocusWindow_0.as_ptr(),
                 self.window(),
                 ptr::null_mut::<c_int>(),
             )
@@ -341,6 +411,11 @@ impl Drawable for Window {
     #[inline]
     fn gc_ref(&self) -> GraphicsContextReference {
         self.gc().reference()
+    }
+
+    #[inline]
+    fn dpy(&self) -> DisplayReference {
+        self.dpy.clone()
     }
 }
 

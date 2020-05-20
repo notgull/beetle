@@ -124,10 +124,10 @@ impl Color {
 pub struct ColorMap {
     internal: xlib::Colormap,
     dpy: DisplayReference,
-    known_pix_ids: RwLock<Vec<c_ulong>>,
     // also store the black and white pixels
     black_pixel: c_ulong,
     white_pixel: c_ulong,
+    is_default: bool,
 }
 
 impl fmt::Debug for ColorMap {
@@ -148,33 +148,36 @@ impl ColorMap {
     #[inline]
     pub(crate) fn from_raw(
         internal: xlib::Colormap,
-        dpy: &DisplayReference,
+        dpy: DisplayReference,
+        is_default: bool,
     ) -> Result<Self, FlutterbugError> {
         Ok(Self {
             internal,
             dpy: dpy.clone(),
-            known_pix_ids: RwLock::new(vec![]),
-            black_pixel: dpy.black_pixel()?.pixel_id(),
-            white_pixel: dpy.white_pixel()?.pixel_id(),
+            black_pixel: dpy.default_black_pixel()?.pixel_id(),
+            white_pixel: dpy.default_white_pixel()?.pixel_id(),
+            is_default,
         })
     }
 
-    /// Returns a Vec<> containing all of the colors in this ColorMap. This is a call to
-    /// XQueryColors() in a way that fills up a vector.
-    fn color_list(&self) -> Result<Vec<xlib::XColor>, FlutterbugError> {
-        let cap = self.known_pix_ids.try_read()?.len();
-        let mut colors = Vec::<xlib::XColor>::with_capacity(cap);
-        unsafe {
-            xlib::XQueryColors(
-                self.dpy.raw()?.as_mut(),
-                self.internal,
-                colors.as_mut_ptr(),
-                cap as c_int,
-            )
-        };
-        unsafe { colors.set_len(cap) };
-        Ok(colors)
-    }
+    /*
+     /// Returns a Vec<> containing all of the colors in this ColorMap. This is a call to
+     /// XQueryColors() in a way that fills up a vector.
+     fn color_list(&self) -> Result<Vec<xlib::XColor>, FlutterbugError> {
+         let cap = self.known_pix_ids.try_read()?.len();
+         let mut colors = Vec::<xlib::XColor>::with_capacity(cap);
+         unsafe {
+             xlib::XQueryColors(
+                 self.dpy.raw()?.as_mut(),
+                 self.internal,
+                 colors.as_mut_ptr(),
+                 cap as c_int,
+             )
+         };
+         unsafe { colors.set_len(cap) };
+         Ok(colors)
+     }
+    */
 
     /// Normalize a color into a PixelID variant.
     pub fn color(&self, clr: Color) -> Result<Color, FlutterbugError> {
@@ -184,7 +187,7 @@ impl ColorMap {
         // in the pixel list before returning
         let tuple: (c_ushort, c_ushort, c_ushort) = match clr {
             Color::PixelID(p) => {
-                #[cfg(debug_assertions)] // don't bother checking if we're not debugging
+                /*                #[cfg(debug_assertions)] // don't bother checking if we're not debugging
                 {
                     if p != self.black_pixel
                         || p != self.white_pixel
@@ -192,7 +195,7 @@ impl ColorMap {
                     {
                         return Err(FlutterbugError::ColorNotFound(p));
                     }
-                }
+                }*/
 
                 return Ok(clr);
             }
@@ -208,37 +211,27 @@ impl ColorMap {
             return Ok(Color::PixelID(self.white_pixel));
         }
 
-        match self
-            .color_list()?
-            .into_iter()
-            .find(|p| (p.red == r) && (p.green == g) && (p.blue == b))
-        {
-            Some(p) => Ok(Color::PixelID(p.pixel)),
-            None => {
-                // insert the color into this color map
-                let mut xcolor = xlib::XColor {
-                    red: r,
-                    green: g,
-                    blue: b,
-                    flags: DO_ALL_COLORS,
-                    ..unsafe { mem::zeroed() }
-                };
+        // insert the color into this color map
+        let mut xcolor = xlib::XColor {
+            red: r,
+            green: g,
+            blue: b,
+            flags: DO_ALL_COLORS,
+            ..unsafe { mem::zeroed() }
+        };
 
-                unsafe { xlib::XStoreColor(self.dpy.raw()?.as_mut(), self.internal, &mut xcolor) };
+        unsafe { xlib::XAllocColor(self.dpy.raw()?.as_mut(), self.internal, &mut xcolor) };
 
-                // add to the color map
-                self.known_pix_ids.try_write()?.push(xcolor.pixel);
-
-                Ok(Color::PixelID(xcolor.pixel))
-            }
-        }
+        Ok(Color::PixelID(xcolor.pixel))
     }
 }
 
 impl Drop for ColorMap {
     fn drop(&mut self) {
         if let Ok(mut d) = self.dpy.raw() {
-            unsafe { xlib::XFreeColormap(d.as_mut(), self.internal) };
+            if !self.is_default {
+                unsafe { xlib::XFreeColormap(d.as_mut(), self.internal) };
+            }
         }
     }
 }

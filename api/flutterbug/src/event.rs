@@ -582,10 +582,16 @@ bitflags::bitflags! {
 }
 
 impl KeyEvent {
+    /// Tell if a function is in the state.
+    #[inline]
+    pub fn has_function(&self, f: FunctionKeys) -> bool {
+        (self.state & f.bits()) != 0
+    }
+
     /// Add or remove a function key.
     #[inline]
-    pub fn set_function(&mut self, f: FunctionKeys, subtract: bool) {
-        if subtract {
+    pub fn set_function(&mut self, f: FunctionKeys, is_in: bool) {
+        if !is_in {
             self.state &= !f.bits();
         } else {
             self.state |= f.bits();

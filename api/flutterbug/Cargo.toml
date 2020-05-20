@@ -10,3 +10,8 @@ euclid = "0.20"
 libc = "*"
 thiserror = "1"
 x11 = { version = "2", features = ["xlib"] }
+
+[dev-dependencies]
+anyhow = "1"
+font-kit = "0.7"
+pathfinder_geometry = "0.5"

@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{DisplayReference, FlutterbugError, GenericDisplay};
+use super::{DisplayReference, DroppableObject, FlutterbugError, GenericDisplay};
 use std::{
     fmt,
     ptr::NonNull,
@@ -174,7 +174,7 @@ impl GenericInputContext for InputContextReference {
         Ok(*self
             .inner
             .upgrade()
-            .ok_or_else(|| FlutterbugError::ICWasDropped)?)
+            .ok_or_else(|| FlutterbugError::PointerWasDropped(DroppableObject::IC))?)
     }
 
     #[inline]

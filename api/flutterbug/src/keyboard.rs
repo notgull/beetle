@@ -45,30 +45,3 @@
 
 use std::os::raw::c_uint;
 
-macro_rules! kb_helper {
-    ($(#[$attr: meta])* $vis: vis enum $name: ident {
-        $($item = $realone),*
-        $(,)*
-    }) => {
-        $(#[$attr])*
-        $vis enum $name {
-            $($item),
-        }
-
-        impl $name {
-            #[inline]
-            pub fn from_raw(raw: c_uint) -> Option<Self> {
-                Some(match raw {
-                    $($realone => Self::$item),*
-                    _ => return None,
-                })
-            }
-        }
-    }
-}
-
-kb_helper! {
-    pub enum KeyPress {
-        
-    }
-}

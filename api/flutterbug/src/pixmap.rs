@@ -43,4 +43,50 @@
  * ----------------------------------------------------------------------------------
  */
 
+use super::{DisplayReference, Drawable, GenericDisplay, GraphicsContextReference, HasXID};
+use x11::xlib;
 
+/// A pixmap that can be drawn upon.
+#[derive(Debug)]
+pub struct Pixmap {
+    inner: xlib::Pixmap,
+    dpy: DisplayReference,
+    gc: GraphicsContextReference,
+}
+
+impl Drop for Pixmap {
+    fn drop(&mut self) {
+        if let Ok(mut d) = self.dpy.raw() {
+            unsafe { xlib::XFreePixmap(d.as_mut(), self.inner) };
+        }
+    }
+}
+
+impl Pixmap {
+    #[inline]
+    pub(crate) fn from_raw(
+        inner: xlib::Pixmap,
+        dpy: DisplayReference,
+        gc: GraphicsContextReference,
+    ) -> Self {
+        Self { inner, dpy, gc }
+    }
+}
+
+impl Drawable for Pixmap {
+    #[inline]
+    fn gc_ref(&self) -> GraphicsContextReference {
+        self.gc.clone()
+    }
+    #[inline]
+    fn dpy(&self) -> DisplayReference {
+        self.dpy.clone()
+    }
+}
+
+impl HasXID for Pixmap {
+    #[inline]
+    fn xid(&self) -> xlib::XID {
+        self.inner
+    }
+}

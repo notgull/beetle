@@ -52,10 +52,35 @@
 
 use std::{
     ffi::{IntoStringError, NulError},
+    fmt,
     sync::{Arc, Mutex, TryLockError},
 };
 use thiserror::Error;
 use x11::xlib::XID;
+
+/// Objects that can be dropped with a reference.
+#[derive(Debug, Clone, Copy)]
+pub enum DroppableObject {
+    Display,
+    GC,
+    IC,
+    Image,
+}
+
+impl fmt::Display for DroppableObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match *self {
+                DroppableObject::Display => "Display",
+                DroppableObject::GC => "GC",
+                DroppableObject::IC => "IC",
+                DroppableObject::Image => "Image",
+            }
+        )
+    }
+}
 
 /// An error that occurred during normal operation of Flutterbug.
 #[derive(Debug, Error)]
@@ -66,23 +91,19 @@ pub enum FlutterbugError {
     /// A static error message.
     #[error("{0}")]
     StaticMsg(&'static str),
-    /// Can't cast DisplayReference to Display.
+    /// Can't cast pointer reference to pointer.
     #[error(
-        "Unable to cast DisplayReference to Display. This usually means that the Display object was dropped."
+        "Unable to cast {0}Reference to {0}. This usually means that the {0} object was dropped."
     )]
-    DisplayWasDropped,
-    /// Can't cast GraphicsContextReference to GraphicsContext.
-    #[error("Unable to cast GraphicsContextReference to GraphicsContext.")]
-    GCWasDropped,
-    /// Can't cast InputContextReference to InputContext.
-    #[error("Unable to cast InputContextReference to InputContext.")]
-    ICWasDropped,
+    PointerWasDropped(DroppableObject),
     /// XCreateIC returned null.
     #[error("Unable to create input context.")]
     ICWasNull,
     /// XOpenDisplay returned null.
     #[error("Unable to open X11 display")]
     UnableToOpenDisplay,
+    #[error("Unable to create image")]
+    ImageWasNull,
     /// No ID in color map
     #[error("Pixel ID {0} was not found in the colormap")]
     ColorNotFound(std::os::raw::c_ulong),
@@ -107,6 +128,8 @@ pub enum FlutterbugError {
     DisplayFieldNull,
     #[error("Unable to retrieve input method")]
     InputMethodNull,
+    #[error("Graphics contexts must be identical in order to copy")]
+    GCMustEqual,
     /// CString creation process failed.
     #[error("CString creation process failed")]
     NulError(#[from] NulError),

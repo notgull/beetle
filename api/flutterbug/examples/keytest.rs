@@ -43,17 +43,21 @@
  * ----------------------------------------------------------------------------------
  */
 
-use euclid::{default::Point2D, rect};
-use flutterbug::{prelude::*, FunctionKeys, Atom, Display, Event, EventMask, EventType, FlutterbugError, ExposeEvent};
+use euclid::default::{Point2D, Size2D};
+use flutterbug::{
+    prelude::*, Atom, Display, Event, EventMask, EventType, ExposeEvent, FlutterbugError,
+    FunctionKeys, KeySym,
+};
 
 fn main() -> Result<(), FlutterbugError> {
     let display = Display::new()?;
     let window = display.create_simple_window(
         None,
-        rect(0, 0, 400, 200),
+        Point2D::new(0, 0),
+        Size2D::new(400, 200),
         1,
-        display.black_pixel()?,
-        display.white_pixel()?,
+        display.default_black_pixel()?,
+        display.default_white_pixel()?,
     )?;
     window.select_input(EventMask::EXPOSURE_MASK | EventMask::KEY_PRESS_MASK)?;
     window.map(true)?;
@@ -68,13 +72,14 @@ fn main() -> Result<(), FlutterbugError> {
     let mut keycode = 0;
     let mut state = 0;
     let mut key = String::new();
+    let mut ks: Option<KeySym> = None;
 
     'el: loop {
         let ev = Event::next(&display)?;
 
         match ev.kind() {
             EventType::Expose => {
-                window.clear_area(rect(0, 0, 400, 200), false)?;
+                window.clear_area(Point2D::new(0, 0), Size2D::new(400, 200), false)?;
                 let xattrs = window.window_attributes()?;
                 window.draw_string(
                     Point2D::new(10, 20),
@@ -82,21 +87,51 @@ fn main() -> Result<(), FlutterbugError> {
                 )?;
 
                 window.draw_string(Point2D::new(10, 40), format!("Key Code is {}", keycode))?;
-                window.draw_string(Point2D::new(10, 60), format!("Key State is {}", state))?; 
+                window.draw_string(Point2D::new(10, 60), format!("Key State is {}", state))?;
                 window.draw_string(Point2D::new(10, 80), format!("Key is {}", key))?;
+                match ks {
+                    Some(ks) => {
+                        window.draw_string(
+                            Point2D::new(10, 100),
+                            format!("Key symbol is {:X}", ks),
+                        )?;
+                        window.draw_string(
+                            Point2D::new(10, 120),
+                            format!(
+                                "Escape? {:?}",
+                                ks as u32 == flutterbug::x11::keysym::XK_Escape
+                            ),
+                        )?;
+                    }
+                    None => {
+                        window.draw_string(Point2D::new(10, 100), String::from("No key symbol"))?
+                    }
+                }
             }
             EventType::KeyPress => {
                 if let Event::Key(mut k) = ev {
                     keycode = k.keycode();
                     state = k.state();
-                    k.set_function(FunctionKeys::CONTROL, true);
-                    let (_, key1) = k.lookup_utf8(&ic)?;
-                    key = key1.unwrap();
-                    
+                    k.set_function(FunctionKeys::CONTROL, false);
+                    let (ks1, key1) = k.lookup_utf8(&ic)?;
+                    key = key1.unwrap_or_else(|| String::new());
+                    ks = ks1;
+
                     //println!("{} ; {}", keycode, state);
 
                     // send expose event
-                    let ev = ExposeEvent::new(EventType::Expose, 0, &display, &window, true, 0, 0, 400, 200, 1)?;
+                    let ev = ExposeEvent::new(
+                        EventType::Expose,
+                        0,
+                        &display,
+                        &window,
+                        true,
+                        0,
+                        0,
+                        400,
+                        200,
+                        1,
+                    )?;
                     let ev = Event::Expose(ev);
                     ev.send(&display, &window, true, EventMask::EXPOSURE_MASK)?;
                 }
