@@ -83,23 +83,27 @@ fn load_char(
         RasterizationOptions::GrayscaleAa,
     )?;
 
-//    println!("{:?}", &canvas.pixels);
+    //    println!("{:?}", &canvas.pixels);
 
     const DEPTH: u32 = 1;
 
     // convert the canvas into a pixmap
-    let img = display.create_image(
-        Size2D::new(32, 32),
-        DEPTH,
-        canvas.pixels.into_iter().map(|m| m as c_char).collect(),
-    )?;
     let pix = window.pixmap(Size2D::new(32, 32), DEPTH)?;
-    pix.put_image(
-        &img,
-        Point2D::zero(),    
-        Point2D::zero(),
-        Size2D::new(32, 32),
-    )?;
+    let img = pix.image(Point2D::zero(), Size2D::new(32, 32))?;
+ 
+    for y in 0i32..32 {
+        for x in 0i32..32 {
+            let loc = (32 * y as usize) + x as usize;
+            img.put_pixel(
+                Point2D::new(x, y),
+                canvas.pixels[loc],
+                canvas.pixels[loc],
+                canvas.pixels[loc],
+            )?;
+        }
+    }
+
+    pix.put_image(&img, Point2D::zero(), Point2D::zero(), Size2D::new(32, 32))?;
     pixmaps.insert(c, pix);
     Ok(())
 }

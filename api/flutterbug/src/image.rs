@@ -43,11 +43,13 @@
  * ----------------------------------------------------------------------------------
  */
 
+use euclid::default::Point2D;
 use super::{DisplayReference, DroppableObject, FlutterbugError};
 use std::{
     boxed::Box,
     fmt,
     marker::PhantomData,
+    os::raw::c_ulong,
     ptr::NonNull,
     sync::{Arc, Weak},
 };
@@ -122,6 +124,16 @@ pub trait GenericImage: fmt::Debug {
     fn height(&self) -> Result<u32, FlutterbugError> {
         let ptr = self.raw()?.as_ptr();
         Ok(unsafe { (*ptr).height } as u32)
+    }
+
+    /// Put a pixel into the image.
+    fn put_pixel(&self, loc: Point2D<i32>, r: u8, g: u8, b: u8) -> Result<(), FlutterbugError> {
+        let pixel = (65536 * (b as c_ulong)) 
+                  + (256 * (g as c_ulong))
+                  + (r as c_ulong);
+
+        unsafe { xlib::XPutPixel(self.raw()?.as_mut(), loc.x, loc.y, pixel) };
+        Ok(())
     }
 }
 

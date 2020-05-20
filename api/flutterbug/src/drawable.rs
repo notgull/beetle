@@ -118,7 +118,7 @@ pub struct GraphicsContextReference {
 
 impl PartialEq for GraphicsContextReference {
     fn eq(&self, other: &Self) -> bool {
-        self.raw.ptr_eq(&self.raw)
+        self.raw.ptr_eq(&other.raw)
     }
 }
 
