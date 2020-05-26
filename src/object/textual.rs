@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/object/textual.rs - Declares the GuiTextual trait, which defines a GuiObject
- *                         with an internal text buffer.
+ * src/object/textual.rs - This file defines the TextualBase trait, among others.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,10 +43,17 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::GuiObject;
+use super::PeerObject;
+use crate::Font;
+use std::sync::Arc;
 
-/// A GuiObject that requires an internal text buffer.
-pub trait GuiTextual: GuiObject {
-    /// Set the internal text buffer.
-    fn set_text(&mut self, val: &str) -> Result<(), crate::Error>;
+/// An object that has text content not defined by the user.
+pub trait TextualBase: PeerObject {
+    /// Set the text used by this object.
+    fn set_text(&mut self, text: String) -> Result<(), crate::Error>;
+    /// Set the font used by this object.
+    fn set_font(&mut self, font: &Font) -> Result<(), crate::Error>;
 }
+
+/// A label that contains text displayed with a certain font.
+pub trait LabelBase: TextualBase {}

@@ -43,10 +43,14 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::FreetypeError;
+use crate::ColorPart;
+#[cfg(target_os = "linux")]
+use flutterbug::FlutterbugError;
+use font_kit::error::{FontLoadingError, SelectionError};
 use std::{
     cell::{BorrowError, BorrowMutError},
     ffi::NulError,
+    sync::{RwLockWriteGuard, TryLockError},
 };
 use thiserror::Error;
 
@@ -59,29 +63,36 @@ pub enum Error {
     #[error("{0}")]
     Nul(#[from] NulError),
     #[error("{0}")]
-    Freetype(#[from] FreetypeError),
-    #[error("{0}")]
     Borrow(#[from] BorrowError),
     #[error("{0}")]
     BorrowMut(#[from] BorrowMutError),
+    #[cfg(target_os = "linux")]
+    #[error("{0}")]
+    Flutterbug(#[from] FlutterbugError),
+    #[error("{0}")]
+    FontLoading(#[from] FontLoadingError),
+    #[error("{0}")]
+    Selection(#[from] SelectionError),
+    #[error("Unable to secure read lock for content.")]
+    TryReadLock,
+    #[error("Unable to secure write lock for content.")]
+    TryWriteLock,
 
     // semantic errors
     #[error("Cannot perform operation with raw internal object")]
     RawInternalInability,
     #[error("Widget reference points to dropped widget")]
     DroppedWidget,
+    #[error("Unable to get arguments from signal")]
+    SignalArgumentMismatch,
+    #[error("Color is outside of the 0.0f - 1.0f that was expected: {0}")]
+    ColorOutOfRange(f32),
+    #[error("Color could not be merged down onto non-solid color.")]
+    NeedsSolidMergeDown,
+}
 
-    // X11 errors
-    #[error("Unable to open display")]
-    UnableToOpenDisplay,
-    #[error("The display object was destroyed")]
-    DroppedDisplay,
-    #[error("Expected LGuiObject to be a window")]
-    ExpectedWindow,
-    #[error("The root window cannot have its parent reassigned")]
-    RootWindowCannotReassignParent,
-    #[error("A window's parent cannot be a sub-element")]
-    NoSubelementParent,
-    #[error("Unable to create the X11 Graphics Context")]
-    NoXGC,
+impl<'a, T> From<TryLockError<RwLockWriteGuard<'a, T>>> for Error {
+    fn from(_e: TryLockError<RwLockWriteGuard<'a, T>>) -> Self {
+        Self::TryWriteLock
+    }
 }

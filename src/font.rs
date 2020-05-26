@@ -1,6 +1,8 @@
 /* -----------------------------------------------------------------------------------
- * src/utils/mod.rs - Various utility functions, such as conversion of Rust string
- *                    slices to C string pointers.
+ * src/font.rs - Describes a simple text style. Things like font family, size, and
+ *               other items. Note that some of these are contained within the FontKit
+ *               "Font" object. This should use an Arc to hold some items, in order to
+ *               be cheaply copyable.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,9 +46,61 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{ffi::CString, os::raw::c_char};
+use font_kit::{
+    canvas::{Canvas, Format, RasterizationOptions},
+    family_name::FamilyName,
+    font::Font as FKFont,
+    hinting::HintingOptions,
+    properties::{Properties, Style},
+    source::SystemSource,
+};
+use pathfinder_geometry::{
+    transform2d::Transform2F,
+    vector::{Vector2F, Vector2I},
+};
+use std::sync::Arc;
 
-#[inline]
-pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
-    Ok(CString::new(val)?.as_ptr() as *mut c_char)
+/// A cheaply clonable wrapper around a font, including size.
+#[derive(Debug)]
+pub struct Font {
+    inner: Arc<FKFont>,
+    size: u32,
+}
+
+impl Clone for Font {
+    fn clone(&self) -> Self {
+        Self::from_raw(self.inner.clone(), self.size)
+    }
+}
+
+impl Font {
+    /// Create a new font from its raw components.
+    #[inline]
+    pub(crate) fn from_raw(inner: Arc<FKFont>, size: u32) -> Self {
+        Self { inner, size }
+    }
+
+    /// Create a new font based on an existing font-kit font and a size.
+    #[inline]
+    pub fn new(font: FKFont, size: u32) -> Self {
+        Self::from_raw(Arc::new(font), size)
+    }
+
+    /// Get a new font based on the font name and the font properties.
+    pub fn by_name_and_properties(
+        name: String,
+        italic: bool,
+        weight: u32,
+        size: u32,
+    ) -> Result<Self, crate::Error> {
+        Ok(Self::new(
+            SystemSource::new()
+                .select_best_match(
+                    &[FamilyName::Title(name)],
+                    &Properties::new().style(if italic { Style::Italic } else { Style::Normal }),
+                )?
+                .load()?,
+            size,
+        ))
+    }
 }

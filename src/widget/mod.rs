@@ -49,8 +49,8 @@ use internal::*;
 mod reference;
 pub use reference::*;
 
-use crate::object::GuiObject;
-use nalgebra::geometry::Point4;
+use crate::object::PeerObject;
+use euclid::default::Rect;
 use owning_ref::{RefMutRefMut, RefRef};
 use std::{cell::RefCell, fmt, sync::Arc};
 
@@ -61,12 +61,18 @@ use std::{cell::RefCell, fmt, sync::Arc};
 /// calls to it. The Widget is also implemented as an Arc<RefCell<T>>, so it can be cheaply
 /// cloned and most calls to it do not require mutable access.
 #[derive(Debug)]
-pub struct Widget<Inner: GuiObject + 'static> {
+pub struct Widget<Inner: PeerObject + 'static> {
     internal: Arc<RefCell<WidgetInternal<Inner>>>,
     generic_ref: Arc<RefCell<dyn GenericWidgetInternal>>,
 }
 
-impl<Inner: GuiObject + 'static> Widget<Inner> {
+impl<Inner: PeerObject + 'static> Clone for Widget<Inner> {
+    fn clone(&self) -> Self {
+        Self::from_internal(self.internal.clone())
+    }
+}
+
+impl<Inner: PeerObject + 'static> Widget<Inner> {
     /// Create a new Widget from the internal Arc.
     #[inline]
     pub(crate) fn from_internal(internal: Arc<RefCell<WidgetInternal<Inner>>>) -> Self {
@@ -84,9 +90,9 @@ impl<Inner: GuiObject + 'static> Widget<Inner> {
 
     /// Create a new Widget from an inner peer object.
     #[inline]
-    pub(crate) fn from_inner(inner: Inner, bounds: Point4<u32>, text: String) -> Self {
+    pub(crate) fn from_inner(inner: Inner, bounds: Rect<u32>) -> Self {
         Self::from_internal(Arc::new(RefCell::new(WidgetInternal::<Inner>::from_inner(
-            inner, bounds, text,
+            inner, bounds,
         ))))
     }
 
@@ -112,44 +118,89 @@ impl<Inner: GuiObject + 'static> Widget<Inner> {
 /// GenericWidgetReference, meaning that any reference to a Widget<T> can be used as a
 /// widget, even if we are unsure of its type.
 pub trait GenericWidget: fmt::Debug {
-    /// The ID of this widget that uniquely identifies it.
-    fn id(&self) -> Result<u64, crate::Error>;
     /// Convert this item to a generic reference.
     fn generic_reference(&self) -> GenericWidgetReference;
 
     /// A generic reference to the internal Arc container.
     fn internal_generic(&self) -> Result<&Arc<RefCell<dyn GenericWidgetInternal>>, crate::Error>;
+
+    /// The ID of this widget that uniquely identifies it.
+    #[inline]
+    fn id(&self) -> Result<u64, crate::Error> {
+        Ok(self.internal_generic()?.try_borrow()?.id())
+    }
+
     /// A generic reference to the inner peer object.
+    #[inline]
     fn inner_generic(
         &self,
-    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, dyn GuiObject>, crate::Error>;
+    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, dyn PeerObject>, crate::Error> {
+        Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.inner_generic()))
+    }
+
     /// A mutable generic reference to the inner peer object.
+    #[inline]
     fn inner_generic_mut(
         &self,
-    ) -> Result<RefMutRefMut<'_, dyn GenericWidgetInternal, dyn GuiObject>, crate::Error>;
+    ) -> Result<RefMutRefMut<'_, dyn GenericWidgetInternal, dyn PeerObject>, crate::Error> {
+        Ok(
+            RefMutRefMut::new(self.internal_generic()?.try_borrow_mut()?)
+                .map_mut(|r| r.inner_generic_mut()),
+        )
+    }
 
     /// The bounds (x/y/width/height) of this widget.
-    fn bounds(&self) -> Result<Point4<u32>, crate::Error>;
+    #[inline]
+    fn bounds(&self) -> Result<Rect<u32>, crate::Error> {
+        Ok(self.internal_generic()?.try_borrow()?.bounds())
+    }
     /// Set the bounds (x/y/width/height) of this widget.
-    fn set_bounds(&self, bounds: Point4<u32>) -> Result<(), crate::Error>;
+    #[inline]
+    fn set_bounds(&self, bounds: Rect<u32>) -> Result<(), crate::Error> {
+        self.internal_generic()?
+            .try_borrow_mut()?
+            .set_bounds(bounds)
+    }
 
     /// The parent widget for this object.
+    #[inline]
     fn parent(
         &self,
-    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, Option<GenericWidgetReference>>, crate::Error>;
+    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, Option<GenericWidgetReference>>, crate::Error>
+    {
+        Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.parent()))
+    }
+
     /// Set the parent widget for this object.
     ///
     /// Note: This will also add this widget as a child for the other item.
-    fn set_parent(&self, parent: &dyn GenericWidget) -> Result<(), crate::Error>;
+    #[inline]
+    fn set_parent(&self, parent: &dyn GenericWidget) -> Result<(), crate::Error> {
+        set_parent_internal(parent.generic_reference(), self.generic_reference())
+    }
 
     /// The list of children for this object.
+    #[inline]
     fn children(
         &self,
-    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, [GenericWidgetReference]>, crate::Error>;
+    ) -> Result<RefRef<'_, dyn GenericWidgetInternal, [GenericWidgetReference]>, crate::Error> {
+        Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.children()))
+    }
     /// Add a child to this widget.
-    fn add_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error>;
+    #[inline]
+    fn add_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error>
+    where
+        Self: Sized,
+    {
+        child.set_parent(self)
+    }
     /// Remove a child from this widget.
-    fn remove_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error>;
+    #[inline]
+    fn remove_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error> {
+        self.internal_generic()?
+            .try_borrow_mut()?
+            .remove_child(child.id()?)
+    }
 }
 
 /// helper function for setting parent
@@ -176,75 +227,7 @@ pub(crate) fn set_parent_internal(
         .add_child(&child)
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! forward_to_i_generic {
-    () => {
-        #[inline]
-        fn id(&self) -> Result<u64, crate::Error> {
-            Ok(self.internal_generic()?.try_borrow()?.id())
-        }
-        #[inline]
-        fn inner_generic(
-            &self,
-        ) -> Result<RefRef<'_, dyn GenericWidgetInternal, dyn GuiObject>, crate::Error> {
-            Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.inner_generic()))
-        }
-        #[inline]
-        fn inner_generic_mut(
-            &self,
-        ) -> Result<RefMutRefMut<'_, dyn GenericWidgetInternal, dyn GuiObject>, crate::Error> {
-            Ok(
-                RefMutRefMut::new(self.internal_generic()?.try_borrow_mut()?)
-                    .map_mut(|r| r.inner_generic_mut()),
-            )
-        }
-
-        #[inline]
-        fn bounds(&self) -> Result<Point4<u32>, crate::Error> {
-            Ok(self.internal_generic()?.try_borrow()?.bounds())
-        }
-        #[inline]
-        fn set_bounds(&self, bounds: Point4<u32>) -> Result<(), crate::Error> {
-            self.internal_generic()?
-                .try_borrow_mut()?
-                .set_bounds(bounds)
-        }
-
-        #[inline]
-        fn parent(
-            &self,
-        ) -> Result<
-            RefRef<'_, dyn GenericWidgetInternal, Option<GenericWidgetReference>>,
-            crate::Error,
-        > {
-            Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.parent()))
-        }
-        #[inline]
-        fn set_parent(&self, parent: &dyn GenericWidget) -> Result<(), crate::Error> {
-            set_parent_internal(parent.generic_reference(), self.generic_reference())
-        }
-
-        #[inline]
-        fn children(
-            &self,
-        ) -> Result<RefRef<'_, dyn GenericWidgetInternal, [GenericWidgetReference]>, crate::Error> {
-            Ok(RefRef::new(self.internal_generic()?.try_borrow()?).map(|r| r.children()))
-        }
-        #[inline]
-        fn add_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error> {
-            child.set_parent(self)
-        }
-        #[inline]
-        fn remove_child(&self, child: &dyn GenericWidget) -> Result<(), crate::Error> {
-            self.internal_generic()?
-                .try_borrow_mut()?
-                .remove_child(child.id()?)
-        }
-    };
-}
-
-impl<Inner: GuiObject + 'static> GenericWidget for Widget<Inner> {
+impl<Inner: PeerObject + 'static> GenericWidget for Widget<Inner> {
     #[inline]
     fn internal_generic(&self) -> Result<&Arc<RefCell<dyn GenericWidgetInternal>>, crate::Error> {
         Ok(&self.generic_ref)
@@ -255,6 +238,4 @@ impl<Inner: GuiObject + 'static> GenericWidget for Widget<Inner> {
         let generic: Arc<RefCell<dyn GenericWidgetInternal>> = self.internal.clone();
         GenericWidgetReference::from_reference(generic)
     }
-
-    forward_to_i_generic! {}
 }

@@ -61,10 +61,10 @@ fn main() -> Result<(), FlutterbugError> {
     )?;
     window.select_input(EventMask::EXPOSURE_MASK | EventMask::KEY_PRESS_MASK)?;
     window.map(true)?;
-    window.store_name(String::from("Test | Simple"))?;
+    window.store_name("Test | Simple")?;
 
     // ensure the delete window message goes through
-    let wm_delete_window = display.internal_atom(String::from("WM_DELETE_WINDOW"), false)?;
+    let wm_delete_window = display.internal_atom("WM_DELETE_WINDOW", false)?;
     window.set_protocols(&mut [wm_delete_window])?;
 
     // main event loop
@@ -73,11 +73,11 @@ fn main() -> Result<(), FlutterbugError> {
 
         match ev.kind() {
             EventType::Expose => {
-                window.draw_string(Point2D::new(10, 10), String::from("Hello world!"))?;
+                window.draw_string(Point2D::new(10, 10), "Hello world!")?;
 
                 let xattrs = window.window_attributes()?;
                 let txt = format!("Window is {}x{}", xattrs.width, xattrs.height);
-                window.draw_string(Point2D::new(10, 30), txt)?;
+                window.draw_string(Point2D::new(10, 30), &txt)?;
             }
             EventType::KeyPress => {
                 if let Event::Key(k) = ev {

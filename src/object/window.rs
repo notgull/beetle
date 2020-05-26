@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/utils/x11.rs - Various types of utilities for X11 components.
+ * src/object/window.rs - This file defines the WindowBase trait, among others.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,23 +43,18 @@
  * ----------------------------------------------------------------------------------
  */
 
-use nalgebra::geometry::Point4;
-use std::{mem, os::raw::c_int};
-use x11::xlib::{self, Display, Window, XEvent, XExposeEvent};
+use super::ContainerBase;
 
-/// Send an X11 Expose event to force a redraw.
-pub fn force_x11_redraw(display: *mut Display, window: Window, bounds: Point4<u32>) {
-    let xev = XExposeEvent {
-        type_: xlib::Expose,
-        display,
-        x: bounds.x as c_int,
-        y: bounds.y as c_int,
-        width: bounds.z as c_int,
-        height: bounds.w as c_int,
-        ..unsafe { mem::zeroed() }
-    };
-
-    let mut xv = XEvent { expose: xev };
-
-    unsafe { xlib::XSendEvent(display, window, 1, xlib::ExposureMask, &mut xv) };
+/// The base trait for any window.
+pub trait WindowBase: ContainerBase {
+    /// Set the title for this window.
+    fn set_title(&mut self, title: String) -> Result<(), crate::Error>;
+    /// Display this window.
+    fn display(&self) -> Result<(), crate::Error>;
 }
+
+/// The base trait for child windows.
+pub trait ChildWindowBase: WindowBase {}
+
+/// The base trait for the main window.
+pub trait MainWindowBase: WindowBase {}

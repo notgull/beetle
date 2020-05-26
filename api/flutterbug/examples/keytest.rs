@@ -61,9 +61,9 @@ fn main() -> Result<(), FlutterbugError> {
     )?;
     window.select_input(EventMask::EXPOSURE_MASK | EventMask::KEY_PRESS_MASK)?;
     window.map(true)?;
-    window.store_name(String::from("Test | Key Pressing"))?;
+    window.store_name("Test | Key Pressing")?;
 
-    let wdw = display.internal_atom(String::from("WM_DELETE_WINDOW"), false)?;
+    let wdw = display.internal_atom("WM_DELETE_WINDOW", false)?;
     window.set_protocols(&mut [wdw])?;
 
     let im = display.input_method()?;
@@ -83,28 +83,28 @@ fn main() -> Result<(), FlutterbugError> {
                 let xattrs = window.window_attributes()?;
                 window.draw_string(
                     Point2D::new(10, 20),
-                    format!("Window size is {}x{}", xattrs.width, xattrs.height),
+                    &format!("Window size is {}x{}", xattrs.width, xattrs.height),
                 )?;
 
-                window.draw_string(Point2D::new(10, 40), format!("Key Code is {}", keycode))?;
-                window.draw_string(Point2D::new(10, 60), format!("Key State is {}", state))?;
-                window.draw_string(Point2D::new(10, 80), format!("Key is {}", key))?;
+                window.draw_string(Point2D::new(10, 40), &format!("Key Code is {}", keycode))?;
+                window.draw_string(Point2D::new(10, 60), &format!("Key State is {}", state))?;
+                window.draw_string(Point2D::new(10, 80), &format!("Key is {}", key))?;
                 match ks {
                     Some(ks) => {
                         window.draw_string(
                             Point2D::new(10, 100),
-                            format!("Key symbol is {:X}", ks),
+                            &format!("Key symbol is {:X}", ks),
                         )?;
                         window.draw_string(
                             Point2D::new(10, 120),
-                            format!(
+                            &format!(
                                 "Escape? {:?}",
                                 ks as u32 == flutterbug::x11::keysym::XK_Escape
                             ),
                         )?;
                     }
                     None => {
-                        window.draw_string(Point2D::new(10, 100), String::from("No key symbol"))?
+                        window.draw_string(Point2D::new(10, 100), "No key symbol")?
                     }
                 }
             }

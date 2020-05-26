@@ -109,7 +109,7 @@ pub enum FlutterbugError {
     ColorNotFound(std::os::raw::c_ulong),
     /// GC returned null.
     #[error("Unable to create graphics context for window")]
-    UnableToCreateGC,
+    GCWasNull, 
     /// Invalid event type
     #[error("Event type is not a valid X11 event type")]
     InvalidEventType,

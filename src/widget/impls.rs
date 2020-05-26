@@ -46,15 +46,16 @@
 use super::{GenericWidget, Widget, WidgetInternal};
 use crate::{
     object::{
-        ChildWindow, ContainerBase, GuiFactory, GuiFactoryBase, GuiObject, GuiTextual, Label,
-        MainWindow, WindowBase,
+        ChildWindow, ContainerBase, GuiFactory, GuiFactoryBase, Label, MainWindow, PeerObject,
+        TextualBase, WindowBase,
     },
     Font,
 };
-use nalgebra::geometry::Point4;
+use euclid::default::Rect;
+use flutterbug::prelude::*;
 use owning_ref::RefRef;
 
-impl<Inner: GuiTextual + 'static> Widget<Inner> {
+impl<Inner: TextualBase + 'static> Widget<Inner> {
     /// Get the text that this widget is displaying.
     #[inline]
     pub fn text(&self) -> Result<RefRef<'_, WidgetInternal<Inner>, str>, crate::Error> {
@@ -94,25 +95,20 @@ impl Widget<Label> {
     pub fn new_label<T: ContainerBase>(
         factory: &GuiFactory,
         parent: &Widget<T>,
-        bounds: Point4<u32>,
+        bounds: Rect<u32>,
         text: String,
-        font: Option<&Font>,
     ) -> Result<Self, crate::Error> {
-        let inner = factory.label(&*parent.inner()?, bounds, &text, font)?;
-        Ok(Self::from_inner(inner, bounds, text))
+        let inner = factory.label(parent.generic_reference(), bounds, text.clone())?;
+        Ok(Self::from_inner(inner, bounds))
     }
 }
 
 impl Widget<MainWindow> {
     /// Create a new Main Window.
     #[inline]
-    pub fn new_main_window(
-        factory: &GuiFactory,
-        bounds: Point4<u32>,
-        title: String,
-    ) -> Result<Self, crate::Error> {
-        let inner = factory.main_window(bounds, &title)?;
-        Ok(Self::from_inner(inner, bounds, title))
+    pub fn new_main_window(factory: &GuiFactory, bounds: Rect<u32>) -> Result<Self, crate::Error> {
+        let inner = factory.main_window(bounds)?;
+        Ok(Self::from_inner(inner, bounds))
     }
 }
 
@@ -122,10 +118,10 @@ impl Widget<ChildWindow> {
     pub fn new_child_window<T: WindowBase>(
         factory: &GuiFactory,
         window: Widget<T>,
-        bounds: Point4<u32>,
+        bounds: Rect<u32>,
         title: String,
     ) -> Result<Self, crate::Error> {
-        let inner = factory.child_window(&*window.inner()?, bounds, &title)?;
-        Ok(Self::from_inner(inner, bounds, title))
+        let inner = factory.child_window(window.generic_reference(), bounds)?;
+        Ok(Self::from_inner(inner, bounds))
     }
 }

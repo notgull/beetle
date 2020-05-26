@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/object/linux/mod.rs - Re-exports the X11 module.
+ * src/object/x11/label.rs - The X11 label peer object.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,6 +43,85 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[path = "x11/mod.rs"]
-mod x11_utils;
-pub use x11_utils::*;
+use super::{BasicWidgetProperties, X11GuiFactory};
+use crate::{
+    object::{LabelBase, PeerObject, TextualBase},
+    Font, Signal,
+};
+use euclid::default::{Point2D, Rect};
+use flutterbug::{prelude::*, Event, Window};
+use std::{fmt, sync::Arc};
+
+/// The label peer object.
+#[derive(Debug)]
+pub struct X11Label {
+    props: BasicWidgetProperties,
+    window: Window,
+    text: String,
+    font: Option<Font>,
+}
+
+impl X11Label {
+    pub(crate) fn new(
+        factory: &X11GuiFactory,
+        parent: &Window,
+        bounds: Rect<u32>,
+        text: String,
+    ) -> Result<Self, crate::Error> {
+        let window = factory.display().create_simple_window(
+            Some(parent),
+            super::get_x_origin(bounds),
+            bounds.size,
+            1,
+            factory.display().default_black_pixel()?,
+            factory.display().default_white_pixel()?,
+        )?;
+
+        Ok(Self {
+            props: BasicWidgetProperties::new(bounds),
+            window,
+            text,
+            font: None,
+        })
+    }
+}
+
+impl PeerObject for X11Label {
+    fn set_bounds(&mut self, bounds: Rect<u32>) -> Result<(), crate::Error> {
+        Ok(self
+            .window
+            .set_bounds(super::get_x_origin(bounds), bounds.size)?)
+    }
+
+    fn set_parent(&mut self, parent: &dyn PeerObject) -> Result<(), crate::Error> {
+        unimplemented!()
+    }
+
+    fn internal_x11_window(&self) -> &Window {
+        &self.window
+    }
+
+    fn translate_x11_event(&mut self, xev: Event) -> Result<Vec<Signal>, crate::Error> {
+        super::props_x11_event(&xev, &self.window, &mut self.props)?;
+        // TODO: fonts
+        // TODO: newline
+        self.window.draw_string(Point2D::zero(), &self.text)?;
+        super::default_x11_translate_event(xev)
+    }
+}
+
+impl TextualBase for X11Label {
+    fn set_text(&mut self, txt: String) -> Result<(), crate::Error> {
+        self.text = txt;
+        // TODO: set refresh
+        Ok(())
+    }
+
+    fn set_font(&mut self, font: &Font) -> Result<(), crate::Error> {
+        self.font = Some(font.clone());
+        // TODO: refresh
+        Ok(())
+    }
+}
+
+impl LabelBase for X11Label {}

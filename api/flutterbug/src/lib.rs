@@ -82,7 +82,7 @@ pub use window::*;
 
 /// Utility function to convert a String into an ASCII *mut c_char
 #[inline]
-pub(crate) unsafe fn to_cstring(s: String) -> Result<*mut c_char, FlutterbugError> {
+pub(crate) unsafe fn to_cstring(s: &str) -> Result<*mut c_char, FlutterbugError> {
     Ok(CString::new(s)?.into_raw())
 }
 
@@ -309,7 +309,13 @@ pub trait GenericDisplay: fmt::Debug {
                 background_color.pixel_id(),
             )
         };
-        Window::from_raw(win, self.reference())
+
+        // create a graphics context
+        let gc = unsafe { xlib::XCreateGC(self.raw()?.as_mut(), win, 0, ptr::null_mut()) };
+        let gc = NonNull::new(gc).ok_or_else(|| FlutterbugError::GCWasNull)?;
+        let gc = GraphicsContext::from_raw(Arc::new(gc), self.reference(), false);
+
+        Ok(Window::from_raw(win, self.reference(), gc))
     }
     /// Create a context using this connection.
     fn create_context(&self) -> Result<Context, FlutterbugError> {
@@ -318,7 +324,7 @@ pub trait GenericDisplay: fmt::Debug {
     /// Get an internal atom based upon its name.
     fn internal_atom(
         &self,
-        name: String,
+        name: &str,
         create_if_exists: bool,
     ) -> Result<xlib::Atom, FlutterbugError> {
         let txt = unsafe { to_cstring(name) }?;
@@ -357,7 +363,7 @@ pub trait GenericDisplay: fmt::Debug {
                 Some(x) => x,
                 None => {
                     // try setting the locale to the internal input method
-                    let txt = unsafe { to_cstring(String::from("@im=none")) }?;
+                    let txt = unsafe { to_cstring("@im=none") }?;
                     unsafe { xlib::XSetLocaleModifiers(txt) };
                     let _ = unsafe { CString::from_raw(txt) };
 

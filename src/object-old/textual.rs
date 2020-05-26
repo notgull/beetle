@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/utils/mod.rs - Various utility functions, such as conversion of Rust string
- *                    slices to C string pointers.
+ * src/object/textual.rs - Declares the GuiTextual trait, which defines a GuiObject
+ *                         with an internal text buffer.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,9 +44,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{ffi::CString, os::raw::c_char};
+use super::GuiObject;
 
-#[inline]
-pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
-    Ok(CString::new(val)?.as_ptr() as *mut c_char)
+/// A GuiObject that requires an internal text buffer.
+pub trait GuiTextual: GuiObject {
+    /// Set the internal text buffer.
+    fn set_text(&mut self, val: &str) -> Result<(), crate::Error>;
 }

@@ -46,8 +46,8 @@
  */
 
 use super::{GenericWidget, GenericWidgetReference};
-use crate::object::{GuiObject, GuiTextual, WindowBase};
-use nalgebra::geometry::Point4;
+use crate::object::{PeerObject, TextualBase, WindowBase};
+use euclid::default::Rect;
 use std::{
     fmt,
     sync::{Arc, Mutex},
@@ -60,13 +60,13 @@ lazy_static::lazy_static! {
 
 /// A wrapper around the peer object.
 #[derive(Debug)]
-pub struct WidgetInternal<Inner: GuiObject + 'static> {
+pub struct WidgetInternal<Inner: PeerObject + 'static> {
     // a unique ID assigned to every widget
     id: u64,
     // wrapping peer object
     inner: Inner,
     // xywh of peer object
-    bounds: Point4<u32>,
+    bounds: Rect<u32>,
     // text/title of peer object
     text: String,
     // object's parent, or None if it doesn't have one
@@ -75,7 +75,7 @@ pub struct WidgetInternal<Inner: GuiObject + 'static> {
     children: Vec<GenericWidgetReference>,
 }
 
-impl<Inner: GuiObject + 'static> WidgetInternal<Inner> {
+impl<Inner: PeerObject + 'static> WidgetInternal<Inner> {
     #[inline]
     pub(crate) fn inner(&self) -> &Inner {
         &self.inner
@@ -88,14 +88,14 @@ impl<Inner: GuiObject + 'static> WidgetInternal<Inner> {
 
     /// Create a new item with specified inner, bounds, and text.
     #[inline]
-    pub(crate) fn from_inner(inner: Inner, bounds: Point4<u32>, text: String) -> Self {
-        let mut guard = NEXT_WIDGET_ID.lock().expect("Unable to lock Widget ID");
+    pub(crate) fn from_inner(inner: Inner, bounds: Rect<u32>) -> Self {
+        let mut guard = NEXT_WIDGET_ID.lock().expect("Unable to lock Widget ID.");
         let id = *guard;
         *guard += 1;
         Self {
             inner,
             bounds,
-            text,
+            text: String::new(),
             parent: None,
             children: vec![],
             id,
@@ -108,11 +108,11 @@ impl<Inner: GuiObject + 'static> WidgetInternal<Inner> {
     }
 }
 
-impl<Inner: GuiTextual + 'static> WidgetInternal<Inner> {
+impl<Inner: TextualBase + 'static> WidgetInternal<Inner> {
     #[inline]
     pub(crate) fn set_text(&mut self, text: String) -> Result<(), crate::Error> {
         self.text = text;
-        self.inner.set_text(&self.text)
+        self.inner.set_text(self.text.clone())
     }
 }
 
@@ -120,7 +120,7 @@ impl<Inner: WindowBase + 'static> WidgetInternal<Inner> {
     #[inline]
     pub(crate) fn set_title(&mut self, text: String) -> Result<(), crate::Error> {
         self.text = text;
-        self.inner.set_title(&self.text)
+        self.inner.set_title(self.text.clone())
     }
 }
 
@@ -129,13 +129,13 @@ pub trait GenericWidgetInternal: fmt::Debug {
     /// Get this widget's ID.
     fn id(&self) -> u64;
     /// Get a generic reference to the internal peer object.
-    fn inner_generic(&self) -> &(dyn GuiObject + 'static);
+    fn inner_generic(&self) -> &(dyn PeerObject + 'static);
     /// Get a mutable generic reference to the internal peer object.
-    fn inner_generic_mut(&mut self) -> &mut (dyn GuiObject + 'static);
+    fn inner_generic_mut(&mut self) -> &mut (dyn PeerObject + 'static);
     /// Get the bounds of this object.
-    fn bounds(&self) -> Point4<u32>;
+    fn bounds(&self) -> Rect<u32>;
     /// Set the bounds of this object.
-    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error>;
+    fn set_bounds(&mut self, bounds: Rect<u32>) -> Result<(), crate::Error>;
     /// Get the parent of this object.
     fn parent(&self) -> &Option<GenericWidgetReference>;
     /// Set the parent of this object.
@@ -149,26 +149,26 @@ pub trait GenericWidgetInternal: fmt::Debug {
 }
 
 // implement GenericWidgetInternal for all WidgetInternal
-impl<Inner: GuiObject + 'static> GenericWidgetInternal for WidgetInternal<Inner> {
+impl<Inner: PeerObject + 'static> GenericWidgetInternal for WidgetInternal<Inner> {
     // most of these functions can be inlined
     #[inline]
     fn id(&self) -> u64 {
         self.id
     }
     #[inline]
-    fn inner_generic(&self) -> &(dyn GuiObject + 'static) {
+    fn inner_generic(&self) -> &(dyn PeerObject + 'static) {
         &self.inner
     }
     #[inline]
-    fn inner_generic_mut(&mut self) -> &mut (dyn GuiObject + 'static) {
+    fn inner_generic_mut(&mut self) -> &mut (dyn PeerObject + 'static) {
         &mut self.inner
     }
     #[inline]
-    fn bounds(&self) -> Point4<u32> {
+    fn bounds(&self) -> Rect<u32> {
         self.bounds
     }
     #[inline]
-    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error> {
+    fn set_bounds(&mut self, bounds: Rect<u32>) -> Result<(), crate::Error> {
         self.bounds = bounds;
         self.inner.set_bounds(bounds)
     }

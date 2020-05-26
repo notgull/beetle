@@ -62,13 +62,13 @@ fn main() -> Result<(), FlutterbugError> {
     window.select_input(EventMask::EXPOSURE_MASK | EventMask::KEY_PRESS_MASK)?;
     window.map(true)?;
     window.set_standard_properties(
-        Some(String::from("Test | Draw")),
-        Some(String::from("Draw Test")),
+        Some("Test | Draw"),
+        Some("Draw Test"),
         None,
         false,
     )?;
 
-    let wdw = display.internal_atom(String::from("WM_DELETE_WINDOW"), false)?;
+    let wdw = display.internal_atom("WM_DELETE_WINDOW", false)?;
     window.set_protocols(&mut [wdw])?;
 
     let colormap = display.default_colormap()?;

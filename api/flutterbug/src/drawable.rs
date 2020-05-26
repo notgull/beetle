@@ -294,7 +294,7 @@ pub trait Drawable: HasXID + fmt::Debug {
     }
 
     /// Draw a string on this object.
-    fn draw_string(&self, origin: Point2D<i32>, text: String) -> Result<(), FlutterbugError> {
+    fn draw_string(&self, origin: Point2D<i32>, text: &str) -> Result<(), FlutterbugError> {
         let gc = self.gc_ref();
         let tlen = text.len();
         let cstr = unsafe { super::to_cstring(text)? };

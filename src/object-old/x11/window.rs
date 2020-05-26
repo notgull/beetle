@@ -43,13 +43,13 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{
-    do_upgrade,
+use super::{ 
     gui_object::{
         ChildWindowBase, ContainerBase, GuiFactoryBase, GuiObject, MainWindowBase, WindowBase,
-    },
-    DisplayPointer, X11Display,
+    }, 
+    X11GuiFactory,
 };
+use flutterbug::{prelude::*, Atom, Window};
 use nalgebra::Point4;
 use std::{
     fmt,
@@ -57,7 +57,6 @@ use std::{
     os::raw::c_int,
     ptr::{self, NonNull},
 };
-use x11::xlib::{self, Atom, Display, Window, GC, _XGC};
 
 /// Flags that can be passed to the X11Window through generics.
 pub trait X11WindowType: Sized + fmt::Debug {
@@ -108,12 +107,7 @@ impl X11WindowType for X11ChildWindow {
 
 #[derive(Debug)]
 pub struct X11Window<WindowType: X11WindowType> {
-    display: DisplayPointer,
-    window: Window,
-    gc: NonNull<_XGC>,
-    delete_window_atom: Atom,
-
-    bounds: Point4<u32>,
+    inner: Window, 
     _phantom: PhantomData<WindowType>,
 }
 
@@ -122,58 +116,12 @@ unsafe impl<WT: X11WindowType> Sync for X11Window<WT> {}
 
 impl<WindowType: X11WindowType> X11Window<WindowType> {
     pub fn new(
-        display: &X11Display,
+        display: &X11GuiFactory,
         parent: WindowType::ExpectedChild,
         bounds: Point4<u32>,
         title: &str,
     ) -> Result<Self, crate::Error> {
-        let weak_ptr = display.get_display_ref();
-        let dpy = do_upgrade(&weak_ptr)?.as_ref().clone().as_ptr();
-        let window = unsafe {
-            xlib::XCreateSimpleWindow(
-                dpy,
-                WindowType::get_parent(parent)
-                    .or_else(|| Some(xlib::XRootWindow(dpy, display.screen())))
-                    .unwrap(),
-                bounds.x as c_int,
-                bounds.y as c_int,
-                bounds.z,
-                bounds.w,
-                1,
-                display.white_pixel(),
-                display.black_pixel(),
-            )
-        };
-
-        // set input method
-        unsafe {
-            xlib::XSelectInput(
-                dpy,
-                window,
-                xlib::ExposureMask | xlib::ButtonPressMask | xlib::KeyPressMask,
-            )
-        };
-
-        // also set the title
-        unsafe { xlib::XStoreName(dpy, window, crate::utils::to_cstring(title)?) };
-
-        // create a GC to draw with
-        let gc = unsafe { xlib::XCreateGC(dpy, window, 0, ptr::null_mut()) };
-
-        // window for deleting this atom
-        let mut delete_window_atom = unsafe {
-            xlib::XInternAtom(
-                dpy,
-                crate::utils::to_cstring("WM_DELETE_WINDOW")?,
-                xlib::False,
-            )
-        };
-        unsafe { xlib::XSetWMProtocols(dpy, window, &mut delete_window_atom, 1) };
-
-        unsafe {
-            xlib::XSetBackground(dpy,gc,display.white_pixel());
-            xlib::XSetForeground(dpy,gc,display.black_pixel());
-        };
+        
 
         Ok(Self {
             display: weak_ptr,

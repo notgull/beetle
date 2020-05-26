@@ -1,7 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/font/mod.rs - A simple Font wrapper. Should be able to be created from default.
- *                   In environments with real internal fonts, the Font object should
- *                   also act as a safe wrapper for the internal font.
+ * src/object/mod.rs - Declares the GuiObject trait, which is the root object for all
+ *                     wrappers for native GUI objects.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -45,39 +44,74 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[path = "freetype/mod.rs"]
-mod freetype_font;
-pub use freetype_font::FreetypeError;
+use nalgebra::geometry::Point4;
+use std::{
+    fmt,
+    ptr::{self, NonNull},
+};
 
-/// The weight of the font.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(i32)]
-pub enum FontWeight {
-    /// Use the default font weight.
-    DontCare = 0,
-    /// Use a normal amount of bolding.
-    Normal = 400,
-    /// Use a moderate amount of bolding.
-    Semibold = 600,
-    /// Make the text bold.
-    Bold = 700,
-    /// Use a heavy amount of bolding.
-    Ultrabold = 800,
+mod container;
+pub use container::*;
+mod factory;
+pub use factory::*;
+mod label;
+pub use label::*;
+mod textual;
+pub use textual::*;
+mod window;
+pub use window::*;
+
+#[cfg(target_os = "linux")]
+mod x11;
+
+pub trait GuiObject: fmt::Debug {
+    /// The boundaries of the object
+    fn bounds(&self) -> Point4<u32>;
+    /// Set the boundaries of the object.
+    fn set_bounds(&mut self, bounds: Point4<u32>) -> Result<(), crate::Error>;
+    /// Set the object's parent
+    fn set_parent(&mut self, parent: &dyn GuiObject) -> Result<(), crate::Error>;
+
+    /// Gets the interior variable representing the window.
+    #[cfg(target_os = "linux")]
+    #[doc(hidden)]
+    fn get_x11_window(&self) -> Option<x11::xlib::Window>;
+    /// If this is a window, get the graphics context for this window.
+    #[cfg(target_os = "linux")]
+    #[doc(hidden)]
+    fn get_x11_gc(&self) -> Option<NonNull<x11::xlib::_XGC>>;
+    /// For X11 objects that require re-rendering.
+    ///
+    /// This should be a no-op for native widgets.
+    #[cfg(target_os = "linux")]
+    fn render(
+        &self,
+        display: &ptr::NonNull<x11::xlib::Display>,
+        win: x11::xlib::Window,
+        gc: NonNull<x11::xlib::_XGC>,
+    ) -> Result<(), crate::Error>;
 }
 
-/// A safe wrapper around a system Font.
-#[derive(Debug, Clone)]
-pub struct Font {
-    // font family
-    family: String,
-    // font size (em)
-    size: u32,
-    // amount of bolding
-    bold: FontWeight,
-    // is the text italic
-    italic: bool,
-    // is the text underlined
-    underlined: bool,
-    // is the text struck out
-    striked: bool,
+pub(crate) mod gui_object {
+    pub use super::{
+        ChildWindowBase, ContainerBase, GuiFactoryBase, GuiObject, GuiTextual, LabelBase,
+        MainWindowBase, WindowBase,
+    };
 }
+
+// object types
+#[cfg(target_os = "linux")]
+type _Label = x11::X11Label;
+pub type Label = _Label;
+
+#[cfg(target_os = "linux")]
+type _MainWindow = x11::X11Window<linux::X11MainWindow>;
+pub type MainWindow = _MainWindow;
+
+#[cfg(target_os = "linux")]
+type _ChildWindow = x11::X11Window<linux::X11ChildWindow>;
+pub type ChildWindow = _ChildWindow;
+
+#[cfg(target_os = "linux")]
+type _GuiFactory = x11::X11GuiFactory;
+pub type GuiFactory = _GuiFactory;

@@ -5,9 +5,12 @@ authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+approx = "0.3"
+euclid = "0.20"
+font-kit = "0.7"
 lazy_static = "1"
-nalgebra = "0.21"
 owning_ref = "0.4"
+pathfinder_geometry = "0.5"
 thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]
@@ -18,7 +21,7 @@ objc = "0.2"
 block = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-freetype = "0.5"
+flutterbug = { path = "./api/flutterbug" }
 x11 = "2"
 
 [profile.release]

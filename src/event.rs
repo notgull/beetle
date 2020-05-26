@@ -1,6 +1,10 @@
 /* -----------------------------------------------------------------------------------
- * src/utils/mod.rs - Various utility functions, such as conversion of Rust string
- *                    slices to C string pointers.
+ * src/event.rs - This file should define a basic, QT-like slot/signal event system
+ *                for Beetle. The "Slot" object should store a vector of boxed
+ *                functions that can be called with a specific set of event arguments.
+ *                The "Signal" object should consist of a boxed list of event
+ *                arguments that can activate a Slot, causing it to call of of its
+ *                stored functions.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,9 +48,53 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{ffi::CString, os::raw::c_char};
+use euclid::default::{Point2D, Rect};
+use std::{boxed::Box, fmt};
 
-#[inline]
-pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
-    Ok(CString::new(val)?.as_ptr() as *mut c_char)
+/// A signal. This can activate a certain Beetle event.
+pub enum Signal {
+    /// The window has been created.
+    Created(()),
+    /// The window has been repainted.
+    Repaint(()),
+    /// The window's bounds have been changed.
+    BoundsChanged((Rect<u32>, Rect<u32>)),
+}
+
+/// A specific type of signal.
+pub trait TypedSignal<Args> {
+    /// Get the args of this signal.
+    fn args(self) -> Option<Args>;
+}
+
+// macro for implementing TypedSignal
+macro_rules! impl_tsignal {
+    ($ename: ident, $args: ty) => {
+        impl TypedSignal<$args> for Signal {
+            fn args(self) -> Option<$args> {
+                match self {
+                    Self::$ename(a) => Some(a),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+impl_tsignal! {Created, ()}
+impl_tsignal! {BoundsChanged, (Rect<u32>, Rect<u32>)}
+
+/// A slot. This holds handlers.
+pub struct Slot<Args> {
+    handlers: Vec<Box<dyn Fn(&Args) -> Result<(), crate::Error>>>,
+}
+
+impl<Args> Slot<Args> {
+    /// Activate all of the handlers in this slot.
+    pub fn activate(&self, signal: impl TypedSignal<Args>) -> Result<(), crate::Error> {
+        let args = signal
+            .args()
+            .ok_or_else(|| crate::Error::SignalArgumentMismatch)?;
+        self.handlers.iter().try_for_each(|h| h(&args))
+    }
 }

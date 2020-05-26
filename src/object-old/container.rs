@@ -1,6 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/utils/mod.rs - Various utility functions, such as conversion of Rust string
- *                    slices to C string pointers.
+ * src/object/container.rs - GUI objects that can contain other GUI objects.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -44,9 +43,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{ffi::CString, os::raw::c_char};
+use super::GuiObject;
 
-#[inline]
-pub fn to_cstring(val: &str) -> Result<*mut c_char, crate::Error> {
-    Ok(CString::new(val)?.as_ptr() as *mut c_char)
-}
+pub trait ContainerBase: GuiObject {}

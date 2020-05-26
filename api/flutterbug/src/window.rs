@@ -95,7 +95,7 @@ pub struct Window {
     win: xlib::Window,
     dpy: DisplayReference,
     // window should also store a reference to its GC and Colormap
-    gc: GraphicsContext,
+    gc: GraphicsContext, 
 }
 
 impl Window {
@@ -103,48 +103,14 @@ impl Window {
     pub(crate) fn from_raw(
         win: xlib::Window,
         dpy: DisplayReference,
-    ) -> Result<Self, FlutterbugError> {
-        // create the graphics context
-        let gc = unsafe { xlib::XCreateGC(dpy.raw()?.as_mut(), win, 0, ptr::null_mut()) };
-        let gc = NonNull::new(gc).ok_or_else(|| FlutterbugError::UnableToCreateGC)?;
-        let gc = GraphicsContext::from_raw(Arc::new(gc), dpy.clone(), false);
-
-        /*
-        // get the pointer to the visual item
-        let mut xattrs: xlib::XWindowAttributes = unsafe { mem::zeroed() };
-        unsafe { xlib::XGetWindowAttributes(dpy.raw()?.as_mut(), win, &mut xattrs) };
-
-        // create the colormap for the window
-        let colormap = unsafe {
-             xlib::XCreateColormap(dpy.raw()?.as_mut(), win, xattrs.visual, xlib::AllocAll)
-        };
-
-        let mut xsetattrs = xlib::XSetWindowAttributes {
-            colormap,
-            ..unsafe { mem::zeroed() }
-        };
-        unsafe { xlib::XChangeWindowAttributes(dpy.raw()?.as_mut(), win, xlib::CWColormap, &mut xsetattrs) };
-        */
-
-        Ok(Self {
+        gc: GraphicsContext,
+    ) -> Self {
+        Self {
             win,
             dpy,
             gc,
-            //            colormap,
-        })
+        }
     }
-
-    /// Get the graphics context for this window.
-    #[inline]
-    pub fn gc(&self) -> &GraphicsContext {
-        &self.gc
-    }
-
-    //    /// Get the color map for this window.
-    //    #[inline]
-    //    pub fn colormap(&self) -> &ColorMap {
-    //        &self.colormap
-    //    }
 
     /// Get the inner number representing the window.
     #[inline]
@@ -253,7 +219,7 @@ impl Window {
 
     /// Store the name of this window.
     #[inline]
-    pub fn store_name(&self, name: String) -> Result<(), FlutterbugError> {
+    pub fn store_name(&self, name: &str) -> Result<(), FlutterbugError> {
         let cstr = unsafe { to_cstring(name)? };
         unsafe { xlib::XStoreName(self.dpy.raw()?.as_mut(), self.win, cstr) };
         // take back the cstr to prevent a memory leak
@@ -265,8 +231,8 @@ impl Window {
     #[inline]
     pub fn set_standard_properties(
         &mut self,
-        window_name: Option<String>,
-        icon_name: Option<String>,
+        window_name: Option<&str>,
+        icon_name: Option<&str>,
         icon: Option<&Pixmap>,
         set_argv: bool,
     ) -> Result<(), FlutterbugError> {
@@ -298,7 +264,7 @@ impl Window {
         let tuple = if set_argv {
             // map env::args() to a c argv**
             let mut args = env::args()
-                .map(|a| unsafe { to_cstring(a) })
+                .map(|a| unsafe { to_cstring(&a) })
                 .collect::<Result<Vec<*mut c_char>, FlutterbugError>>()?;
             let argv = args.as_mut_ptr();
             let argc = args.len();
@@ -408,7 +374,7 @@ impl HasXID for Window {
 impl Drawable for Window {
     #[inline]
     fn gc_ref(&self) -> GraphicsContextReference {
-        self.gc().reference()
+        self.gc.reference()
     }
 
     #[inline]

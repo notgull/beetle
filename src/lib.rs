@@ -45,6 +45,7 @@
  */
 
 #![allow(dead_code)]
+#![allow(unused_imports)]
 #![recursion_limit = "128"]
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -55,6 +56,9 @@ pub use color::*;
 
 mod error;
 pub use error::*;
+
+pub mod event;
+pub use event::*;
 
 mod font;
 pub use font::*;

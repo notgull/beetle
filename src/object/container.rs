@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/object/container.rs - GUI objects that can contain other GUI objects.
+ * src/object/mod.rs - This file defines the ContainerBase trait for containers.
  * beetle - Simple graphics framework for Rust
  * Copyright © 2020 not_a_seagull
  *
@@ -43,6 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::GuiObject;
+use super::PeerObject;
 
-pub trait ContainerBase: GuiObject {}
+/// A peer object that can contain other peer objects. This has no functions (since the line
+/// between container and non-container are blurred in most system interfaces), and only
+/// serves to mark widgets that should be allowed to contain other widgets.
+pub trait ContainerBase: PeerObject {}

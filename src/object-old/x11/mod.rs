@@ -44,11 +44,12 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub(crate) use super::super::{
+pub(crate) use super::{
     gui_object::{self, GuiObject, WindowBase},
     GuiFactoryBase,
 };
 use crate::{Font, GenericWidget, MainWindow, Widget};
+use flutterbug::{prelude::*, Context, Display};
 use nalgebra::geometry::Point4;
 use std::{
     convert::AsMut,
@@ -57,61 +58,26 @@ use std::{
     ptr::{self, NonNull},
     sync::{Arc, Weak},
 };
-use x11::xlib::{self, Atom, Display, Window, _XGC};
 
 mod label;
 pub use label::*;
 mod window;
 pub use window::*;
 
-/// The X11 Display. A reference to this should be carried in every X11 window.
+/// A GUI Factory for the X11 library. This is a wrapper around the X11 display object.
 #[derive(Debug)]
-pub struct X11Display {
-    display: Arc<NonNull<Display>>,
-    screen: c_int,
-    black_pixel: c_ulong,
-    white_pixel: c_ulong,
+pub struct X11GuiFactory {
+    context: Context,
+    display: Display,
 }
 
-impl X11Display {
-    #[inline]
-    pub fn get_display_ref(&self) -> Weak<NonNull<Display>> {
-        Arc::downgrade(&self.display)
-    }
-
-    #[inline]
-    pub fn screen(&self) -> c_int {
-        self.screen
-    }
-
-    #[inline]
-    pub fn black_pixel(&self) -> c_ulong {
-        self.black_pixel
-    }
-
-    #[inline]
-    pub fn white_pixel(&self) -> c_ulong {
-        self.white_pixel
-    }
-}
-
-impl GuiFactoryBase for X11Display {
+impl GuiFactoryBase for X11GuiFactory {
     type ChildWindow = X11Window<X11ChildWindow>;
     type MainWindow = X11Window<X11MainWindow>;
     type Label = X11Label;
 
     fn new() -> Result<Self, crate::Error> {
-        let mut display = NonNull::new(unsafe { xlib::XOpenDisplay(ptr::null()) })
-            .ok_or_else(|| crate::Error::UnableToOpenDisplay)?;
-        let screen = unsafe { xlib::XDefaultScreen(display.as_mut()) };
-        let black_pixel = unsafe { xlib::XBlackPixel(display.as_mut(), screen) };
-        let white_pixel = unsafe { xlib::XWhitePixel(display.as_mut(), screen) };
-        Ok(Self {
-            display: Arc::new(display),
-            screen,
-            black_pixel,
-            white_pixel,
-        })
+        Ok(Self { context: Context::new()?, display: Display::new()? })
     }
 
     fn main_window(

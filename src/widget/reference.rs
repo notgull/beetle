@@ -46,8 +46,7 @@
  */
 
 use super::{set_parent_internal, GenericWidget, GenericWidgetInternal};
-use crate::{forward_to_i_generic, object::GuiObject};
-use nalgebra::geometry::Point4;
+use crate::object::PeerObject;
 use owning_ref::{RefMutRefMut, RefRef};
 use std::{cell::RefCell, sync::Arc};
 
@@ -87,6 +86,4 @@ impl GenericWidget for GenericWidgetReference {
     fn generic_reference(&self) -> GenericWidgetReference {
         self.clone()
     }
-
-    forward_to_i_generic! {}
 }
