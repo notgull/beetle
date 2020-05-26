@@ -53,7 +53,7 @@
 use std::{
     ffi::{IntoStringError, NulError},
     fmt,
-    sync::{Arc, Mutex, TryLockError},
+    sync::{TryLockError},
 };
 use thiserror::Error;
 use x11::xlib::XID;

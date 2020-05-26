@@ -50,7 +50,7 @@ use font_kit::error::{FontLoadingError, SelectionError};
 use std::{
     cell::{BorrowError, BorrowMutError},
     ffi::NulError,
-    sync::{RwLockWriteGuard, TryLockError},
+    sync::{RwLockReadGuard, RwLockWriteGuard, TryLockError},
 };
 use thiserror::Error;
 
@@ -95,4 +95,10 @@ impl<'a, T> From<TryLockError<RwLockWriteGuard<'a, T>>> for Error {
     fn from(_e: TryLockError<RwLockWriteGuard<'a, T>>) -> Self {
         Self::TryWriteLock
     }
+}
+
+impl<'a, T> From<TryLockError<RwLockReadGuard<'a, T>>> for Error {
+    fn from(_e: TryLockError<RwLockReadGuard<'a, T>>) -> Self {
+        Self::TryReadLock
+    } 
 }

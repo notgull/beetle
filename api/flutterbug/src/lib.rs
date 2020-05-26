@@ -47,7 +47,7 @@
 
 pub extern crate x11;
 
-use euclid::default::{Point2D, Rect, Size2D};
+use euclid::default::{Point2D, Size2D};
 use std::{
     ffi::CString,
     fmt, mem,
@@ -342,7 +342,7 @@ pub trait GenericDisplay: fmt::Debug {
     fn input_method(&self) -> Result<InputMethod, FlutterbugError> {
         // try to get the XIM based on the environment vars
         unsafe { libc::setlocale(libc::LC_ALL, (&[0]).as_ptr()) };
-        unsafe { xlib::XSetLocaleModifiers((&mut [0]).as_ptr()) };
+        unsafe { xlib::XSetLocaleModifiers((&[0]).as_ptr()) };
 
         #[inline]
         fn open_im(mut dpy: NonNull<xlib::Display>) -> xlib::XIM {

@@ -50,6 +50,7 @@ use euclid::default::Rect;
 #[cfg(target_os = "linux")]
 use flutterbug::{Event as X11Event, Window as X11Window};
 use std::{
+    boxed::Box,
     fmt,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
@@ -81,7 +82,7 @@ pub trait PeerObject: fmt::Debug {
     fn internal_x11_window(&self) -> &X11Window;
     /// Given an X11 event, respond to it an translate it into a Beetle event, if needed.
     #[cfg(target_os = "linux")]
-    fn translate_x11_event(&mut self, xev: X11Event) -> Result<Vec<Signal>, crate::Error>;
+    fn translate_x11_event(&mut self, xev: X11Event) -> Result<Vec<Arc<dyn Signal + 'static>>, crate::Error>;
 }
 
 /// A GUI Factory, or an object that is capable of producing peer objects and widgets.
@@ -118,6 +119,9 @@ pub trait GuiFactoryBase: fmt::Debug {
 
     /// Register a widget into whatever context we need for events.
     fn post_creation<T: PeerObject>(&self, widget: Widget<T>) -> Result<(), crate::Error>;
+
+    /// Run the main loop.
+    fn main_loop(self) -> Result<(), crate::Error>;
 }
 
 #[cfg(target_os = "linux")]

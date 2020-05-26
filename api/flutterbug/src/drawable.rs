@@ -50,7 +50,7 @@ use super::{
     Color, ColorMap, DisplayReference, DroppableObject, FlutterbugError, GenericDisplay,
     GenericImage, HasXID, Image, Pixmap,
 };
-use euclid::default::{Point2D, Rect, Size2D};
+use euclid::default::{Point2D, Size2D};
 use std::{
     ffi::CString,
     fmt,

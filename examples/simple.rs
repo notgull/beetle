@@ -44,24 +44,23 @@
  */
 
 use beetle::{prelude::*, GuiFactory, Label, MainWindow, Widget};
-use nalgebra::geometry::Point4;
+use euclid::rect;
 
 fn main() -> Result<(), beetle::Error> {
     let factory = GuiFactory::new()?;
     let main_window = Widget::<MainWindow>::new_main_window(
         &factory,
-        Point4::new(0, 0, 600, 400),
-        "Test".to_string(),
+        rect(0, 0, 600, 400),
     )?;
+    main_window.set_title("Test | Simple".to_string())?;
     let _label = Widget::<Label>::new_label(
         &factory,
         &main_window,
-        Point4::new(20, 20, 80, 80),
+        rect(20, 80, 400, 200),
         "Hello world!".to_string(),
-        None,
     )?;
 
     main_window.display()?;
 
-    factory.main_loop(main_window)
+    factory.main_loop()
 }

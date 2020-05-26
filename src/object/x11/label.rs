@@ -49,7 +49,7 @@ use crate::{
     Font, Signal,
 };
 use euclid::default::{Point2D, Rect};
-use flutterbug::{prelude::*, Event, Window};
+use flutterbug::{prelude::*, Color as FlutterColor, Event, EventMask, Window};
 use std::{fmt, sync::Arc};
 
 /// The label peer object.
@@ -59,6 +59,7 @@ pub struct X11Label {
     window: Window,
     text: String,
     font: Option<Font>,
+    black: FlutterColor,
 }
 
 impl X11Label {
@@ -73,15 +74,19 @@ impl X11Label {
             super::get_x_origin(bounds),
             bounds.size,
             1,
-            factory.display().default_black_pixel()?,
+            factory.display().default_white_pixel()?,
             factory.display().default_white_pixel()?,
         )?;
+
+        window.map(false)?;
+        window.select_input(EventMask::EXPOSURE_MASK)?;
 
         Ok(Self {
             props: BasicWidgetProperties::new(bounds),
             window,
             text,
             font: None,
+            black: factory.display().default_black_pixel()?,
         })
     }
 }
@@ -93,7 +98,7 @@ impl PeerObject for X11Label {
             .set_bounds(super::get_x_origin(bounds), bounds.size)?)
     }
 
-    fn set_parent(&mut self, parent: &dyn PeerObject) -> Result<(), crate::Error> {
+    fn set_parent(&mut self, _parent: &dyn PeerObject) -> Result<(), crate::Error> {
         unimplemented!()
     }
 
@@ -101,11 +106,14 @@ impl PeerObject for X11Label {
         &self.window
     }
 
-    fn translate_x11_event(&mut self, xev: Event) -> Result<Vec<Signal>, crate::Error> {
+    fn translate_x11_event(&mut self, xev: Event) -> Result<Vec<Arc<dyn Signal + 'static>>, crate::Error> {
         super::props_x11_event(&xev, &self.window, &mut self.props)?;
         // TODO: fonts
         // TODO: newline
-        self.window.draw_string(Point2D::zero(), &self.text)?;
+        if let &Event::Expose(ref _e) = &xev {
+            self.window.set_foreground(self.black)?;
+            self.window.draw_string(Point2D::new(0,10), &self.text)?;
+        }
         super::default_x11_translate_event(xev)
     }
 }

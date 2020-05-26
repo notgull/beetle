@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{DisplayReference, DroppableObject, FlutterbugError, GenericDisplay};
+use super::{DisplayReference, DroppableObject, FlutterbugError};
 use std::{
     fmt,
     ptr::NonNull,
@@ -54,7 +54,6 @@ use x11::xlib::{self, _XIC, _XIM};
 /// An X11 input method, used to determine how text is input.
 pub struct InputMethod {
     inner: NonNull<_XIM>,
-    dpy: DisplayReference,
 }
 
 impl fmt::Debug for InputMethod {
@@ -66,8 +65,8 @@ impl fmt::Debug for InputMethod {
 
 impl InputMethod {
     #[inline]
-    pub(crate) fn from_raw(dpy: DisplayReference, inner: NonNull<_XIM>) -> Self {
-        Self { inner, dpy }
+    pub(crate) fn from_raw(_dpy: DisplayReference, inner: NonNull<_XIM>) -> Self {
+        Self { inner }
     }
 
     #[inline]

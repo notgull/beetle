@@ -99,7 +99,9 @@ impl Widget<Label> {
         text: String,
     ) -> Result<Self, crate::Error> {
         let inner = factory.label(parent.generic_reference(), bounds, text.clone())?;
-        Ok(Self::from_inner(inner, bounds))
+        let w = Self::from_inner(inner, bounds);
+        factory.post_creation(w.clone())?;
+        Ok(w)
     }
 }
 
@@ -108,7 +110,9 @@ impl Widget<MainWindow> {
     #[inline]
     pub fn new_main_window(factory: &GuiFactory, bounds: Rect<u32>) -> Result<Self, crate::Error> {
         let inner = factory.main_window(bounds)?;
-        Ok(Self::from_inner(inner, bounds))
+        let w = Self::from_inner(inner, bounds);
+        factory.post_creation(w.clone())?;
+        Ok(w)
     }
 }
 
@@ -122,6 +126,8 @@ impl Widget<ChildWindow> {
         title: String,
     ) -> Result<Self, crate::Error> {
         let inner = factory.child_window(window.generic_reference(), bounds)?;
-        Ok(Self::from_inner(inner, bounds))
+        let w = Self::from_inner(inner, bounds);
+        factory.post_creation(w.clone())?;
+        Ok(w)
     }
 }

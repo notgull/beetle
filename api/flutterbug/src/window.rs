@@ -46,16 +46,16 @@
  */
 
 use super::{
-    to_cstring, ColorMap, DisplayReference, Drawable, EventMask, FlutterbugError, GenericDisplay,
+    to_cstring, DisplayReference, Drawable, EventMask, FlutterbugError, GenericDisplay,
     GenericGraphicsContext, GraphicsContext, GraphicsContextReference, HasXID, InputContext,
     InputMethod, Pixmap,
 };
-use euclid::default::{Point2D, Rect, Size2D};
+use euclid::default::{Point2D, Size2D};
 use std::{
     env,
     ffi::CString,
     mem,
-    os::raw::{c_char, c_int, c_uint, c_ulong, c_ushort},
+    os::raw::{c_char, c_int, c_uint, c_ulong},
     ptr::{self, NonNull},
     sync::Arc,
 };

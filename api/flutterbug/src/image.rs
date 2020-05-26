@@ -43,12 +43,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{DisplayReference, DroppableObject, FlutterbugError};
+use super::{DroppableObject, FlutterbugError};
 use euclid::default::Point2D;
 use std::{
-    boxed::Box,
     fmt,
-    marker::PhantomData,
     os::raw::c_ulong,
     ptr::NonNull,
     sync::{Arc, Weak},

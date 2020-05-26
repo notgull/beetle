@@ -46,10 +46,10 @@
 use super::{BasicWidgetProperties, X11GuiFactory};
 use crate::{
     object::{ChildWindowBase, ContainerBase, MainWindowBase, PeerObject, WindowBase},
-    GenericWidget, GenericWidgetReference, Signal,
+    GenericWidget, GenericWidgetReference, Signal, SigDestroyWindow, SigDestroyApplication, 
 };
 use euclid::default::{Point2D, Rect, Size2D};
-use flutterbug::{prelude::*, x11::xlib, Atom, Event, Window};
+use flutterbug::{prelude::*, x11::xlib, Atom, Event, EventMask, Window};
 use std::{
     fmt,
     marker::PhantomData,
@@ -113,30 +113,21 @@ pub struct X11Window<WindowType: X11WindowType> {
 impl<WindowType: X11WindowType> X11Window<WindowType> {
     pub(crate) fn new(
         factory: &X11GuiFactory,
-        parent: WindowType::ParentType,
+        _parent: WindowType::ParentType,
         bounds: Rect<u32>,
     ) -> Result<Self, crate::Error> {
         let origin = super::get_x_origin(bounds);
         let black = factory.display().default_black_pixel()?;
         let white = factory.display().default_white_pixel()?;
         let sz = bounds.size;
-
-        let window = match WindowType::get_parent(parent) {
-            Some(ref p) => {
-                let inner = p.inner_generic()?;
-                let win = inner.internal_x11_window();
-                factory
-                    .display()
-                    .create_simple_window(Some(win), origin, sz, 1, black, white)?
-            }
-            None => factory
-                .display()
-                .create_simple_window(None, origin, sz, 1, black, white)?,
-        };
+                
+        let window = factory.display().create_simple_window(None, origin, sz, 1, black, white)?;
 
         // also get the delete window atom
         let wdw = factory.display().internal_atom("WM_DELETE_WINDOW", false)?;
         window.set_protocols(&mut [wdw])?;
+ 
+        window.select_input(EventMask::EXPOSURE_MASK)?;
 
         Ok(Self {
             props: BasicWidgetProperties::new(bounds),
@@ -167,9 +158,27 @@ impl<WindowType: X11WindowType> PeerObject for X11Window<WindowType> {
     }
 
     #[inline]
-    fn translate_x11_event(&mut self, xev: Event) -> Result<Vec<Signal>, crate::Error> {
+    fn translate_x11_event(&mut self, xev: Event) -> Result<Vec<Arc<dyn Signal + 'static>>, crate::Error> {
         super::props_x11_event(&xev, &self.window, &mut self.props)?;
-        super::default_x11_translate_event(xev)
+
+        // check to see if we need to close the window
+        let mut signals: Vec<Arc<dyn Signal + 'static>> = vec![];
+
+        match &xev {
+            Event::ClientMessage(ref cm) => {
+                if AsRef::<[Atom]>::as_ref(&cm.data())[0] == self.wdw_atom {
+                    if WindowType::is_main() {
+                        signals.push(Arc::new(SigDestroyApplication));
+                    } else {
+                        signals.push(Arc::new(SigDestroyWindow));
+                    }
+                }
+            }
+            _ => { /* do nothing */ }
+        }
+
+        signals.extend(super::default_x11_translate_event(xev)?);
+        Ok(signals)
     }
 }
 

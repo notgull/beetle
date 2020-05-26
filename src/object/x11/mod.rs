@@ -45,13 +45,13 @@
 
 use crate::{
     object::{GuiFactoryBase, PeerObject, WindowBase},
-    Color, GenericWidget, GenericWidgetReference, Signal, Widget,
+    Color, GenericWidget, GenericWidgetReference, Signal, Widget, SigDestroyWindow, SigDestroyApplication, SigCreated,
 };
 use euclid::default::{Point2D, Rect, Size2D};
 use flutterbug::{
     prelude::*, x11::xlib, Color as FlutterColor, ColorMap, Context, Display, Event, Pixmap, Window,
 };
-use std::{collections::HashMap, convert::TryInto, sync::RwLock};
+use std::{collections::HashMap, convert::TryInto, sync::{Arc, RwLock}};
 
 mod label;
 pub use label::*;
@@ -121,11 +121,14 @@ pub(crate) fn props_x11_event(
 }
 
 /// Default X11 event translator
-pub(crate) fn default_x11_translate_event(xev: Event) -> Result<Vec<Signal>, crate::Error> {
+pub(crate) fn default_x11_translate_event(xev: Event) -> Result<Vec<Arc<dyn Signal + 'static>>, crate::Error> {
+    let mut evs: Vec<Arc<dyn Signal + 'static>> = Vec::with_capacity(1);
     match xev {
-        Event::Map(_m) => Ok(vec![Signal::Created(())]),
-        _ => Ok(vec![]),
+        Event::Map(_m) => evs.push(Arc::new(SigCreated)),
+        _ => { /* do nothing */ } 
     }
+
+    Ok(evs)
 }
 
 #[inline]
@@ -193,6 +196,33 @@ impl GuiFactoryBase for X11GuiFactory {
             widget.inner()?.internal_x11_window().window(),
             widget.generic_reference(),
         );
+        Ok(())
+    }
+
+    fn main_loop(self) -> Result<(), crate::Error> {
+        // iterate over events
+        'el: loop {
+            let ev = Event::next(&self.display)?;
+            let wid = ev.window();
+            
+            // get the widget that the event corresponds to
+            if let Some(w) = self.context.try_read()?.get(&wid) {
+                // translate the event
+                let signals = w.inner_generic_mut()?.translate_x11_event(ev)?; 
+ 
+                for signal in signals {
+                    // TODO: send signal to signal handlers
+
+                    // special signals need to be dealth with
+                    if signal.is::<SigDestroyWindow>() {
+                        self.context.try_write()?.remove(&wid);
+                    } else if signal.is::<SigDestroyApplication>() {
+                        break 'el;
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }

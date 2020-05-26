@@ -47,10 +47,10 @@
 
 use super::{FlutterbugError, GenericDisplay, GenericInputContext, Window};
 use std::{
-    convert::TryFrom,
+
     ffi::CString,
-    fmt, mem,
-    os::raw::{c_char, c_int, c_long, c_uchar, c_uint, c_ulong},
+    mem,
+    os::raw::{c_int, c_long, c_uchar, c_uint, c_ulong},
     ptr::{self, NonNull},
 };
 use x11::xlib::{self, XID};
@@ -176,8 +176,8 @@ impl EventType {
     }
 
     /// Convert to a representative C integer.
-    pub fn to_int(&self) -> c_int {
-        match *self {
+    pub fn to_int(self) -> c_int {
+        match self {
             Self::KeyPress => xlib::KeyPress,
             Self::KeyRelease => xlib::KeyRelease,
             Self::ButtonPress => xlib::ButtonPress,
@@ -356,7 +356,7 @@ macro_rules! anyev_impl {
                     display: NonNull::new(xev.display)
                         .ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
                     window: xev.$winname,
-                    from_send_event: if xev.send_event != 0 { true } else { false },
+                    from_send_event: xev.send_event != 0,
                 })
             }
 
@@ -381,7 +381,7 @@ impl DerivesEvent<xlib::XAnyEvent> for AnyEvent {
             serial: xev.serial,
             display: NonNull::new(xev.display).ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
             window: xev.window,
-            from_send_event: if xev.send_event != 0 { true } else { false },
+            from_send_event: xev.send_event != 0,
         })
     }
 
@@ -454,6 +454,7 @@ macro_rules! event_type {
         $(,)?
     }: $mname: ident) => {
         $vis mod $mname {
+            #![allow(clippy::all)]
             #![allow(unused_imports)]
 
             use crate::{FlutterbugError, GenericDisplay, Window};
@@ -494,7 +495,7 @@ macro_rules! event_type {
                         serial: ev.serial,
                         display: NonNull::new(ev.display).ok_or_else(|| FlutterbugError::DisplayFieldNull)?,
                         window: ev.$winname,
-                        from_send_event: if ev.send_event != 0 { true } else { false },
+                        from_send_event: ev.send_event != 0,
                         inner: ev,
                         $($fname: ev.$sfname.try_into().unwrap_or_else(|_|
                             panic!("Tried to convert {} and failed", stringify!($fname))

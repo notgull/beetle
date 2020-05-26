@@ -49,52 +49,82 @@
  */
 
 use euclid::default::{Point2D, Rect};
-use std::{boxed::Box, fmt};
+use std::{any::Any, boxed::Box, fmt, sync::Arc};
 
-/// A signal. This can activate a certain Beetle event.
-pub enum Signal {
+/// The types of signals that can be sent by a widget. 
+#[derive(Debug)]
+pub enum SignalType {
     /// The window has been created.
-    Created(()),
+    Created,
     /// The window has been repainted.
-    Repaint(()),
+    Repaint,
     /// The window's bounds have been changed.
-    BoundsChanged((Rect<u32>, Rect<u32>)),
+    BoundsChanged,
+    /// The window must be destroyed.
+    DestroyWindow,
+    /// The application must be destroyed.
+    DestroyApplication,
 }
 
-/// A specific type of signal.
-pub trait TypedSignal<Args> {
-    /// Get the args of this signal.
-    fn args(self) -> Option<Args>;
+/// A trait that can be applied to any given signal.
+pub trait Signal : downcast_rs::DowncastSync {
+    fn kind(&self) -> SignalType;
 }
 
-// macro for implementing TypedSignal
-macro_rules! impl_tsignal {
-    ($ename: ident, $args: ty) => {
-        impl TypedSignal<$args> for Signal {
-            fn args(self) -> Option<$args> {
-                match self {
-                    Self::$ename(a) => Some(a),
-                    _ => None,
-                }
-            }
+downcast_rs::impl_downcast!(sync Signal);
+
+// macro for creating signal types
+macro_rules! sig_type {
+    ($(#[$attr: meta])* $name: ident => $sigtype: ident) => {
+        $(#[$attr])*
+        #[derive(Debug)]
+        pub struct $name;
+
+        impl Signal for $name {
+            #[inline]
+            fn kind(&self) -> SignalType { SignalType::$sigtype }
+        }
+ 
+        unsafe impl Send for $name { }
+        unsafe impl Sync for $name { }
+    };
+    ($(#[$attr: meta])* $name: ident { $($fvis: vis $fname: ident : $fty: ty),* $(,)* } => $sigtype: ident) => {
+        $(#[$attr])*
+        #[derive(Debug)]
+        pub struct $name {
+            $($fvis $fname : $fty),*
+        }
+
+        impl Signal for $name {
+            #[inline]
+            fn kind(&self) -> SignalType { SignalType::$sigtype }
         }
     };
 }
 
-impl_tsignal! {Created, ()}
-impl_tsignal! {BoundsChanged, (Rect<u32>, Rect<u32>)}
-
-/// A slot. This holds handlers.
-pub struct Slot<Args> {
-    handlers: Vec<Box<dyn Fn(&Args) -> Result<(), crate::Error>>>,
+sig_type! {SigCreated => Created}
+sig_type! {SigRepaint => Repaint}
+sig_type! {SigDestroyWindow => DestroyWindow}
+sig_type! {SigDestroyApplication => DestroyApplication}
+sig_type! {
+    SigBoundsChanged {
+        pub old: Rect<u32>,
+        pub new: Rect<u32>,
+    } => BoundsChanged
 }
 
-impl<Args> Slot<Args> {
+/// A slot. This holds handlers.
+pub struct Slot<Sig: Signal> {
+    handlers: Vec<Box<dyn Fn(&Sig) -> Result<(), crate::Error>>>,
+}
+
+impl<Sig: Signal> Slot<Sig> {
     /// Activate all of the handlers in this slot.
-    pub fn activate(&self, signal: impl TypedSignal<Args>) -> Result<(), crate::Error> {
+    pub fn activate(&self, signal: Arc<dyn Signal>) -> Result<(), crate::Error> {
+        let signal: Arc<dyn Any + Send + Sync> = signal.into_any_arc();
         let args = signal
-            .args()
-            .ok_or_else(|| crate::Error::SignalArgumentMismatch)?;
+            .downcast::<Sig>()
+            .or_else(|_| Err(crate::Error::SignalArgumentMismatch))?;
         self.handlers.iter().try_for_each(|h| h(&args))
     }
 }
