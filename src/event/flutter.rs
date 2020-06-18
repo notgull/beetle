@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/event/flutter.rs - Translate a Beetle Event to a Flutterbug one.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,42 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use super::{Event, EventType};
+use crate::{Instance, KeyInfo, KeyType};
+use flutterbug::{prelude::*, Event as FEvent, EventType as FEventType};
+use std::sync::Arc;
+
+impl Event {
+    /// Translate a Flutterbug event to a Beetle event.
+    pub fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<Vec<Self>> {
+        // optimize for at least one event
+        let mut evs = Vec::with_capacity(1);
+        let ty = fev.kind();
+        let assoc_window = instance
+            .get_window(fev.window())
+            .ok_or_else(|| crate::Error::WindowNotFound)?;
+
+        match fev {
+            FEvent::Key(k) => {
+                // get the key information from the event
+                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.ic())?;
+                let mut ki = KeyInfo::new(KeyType::from_keysym(
+                    ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
+                ));
+
+                evs.push(Event::new(
+                    &assoc_window,
+                    match ty {
+                        FEventType::KeyPress => EventType::KeyDown,
+                        FEventType::KeyRelease => EventType::KeyUp,
+                        _ => unreachable!(),
+                    },
+                    vec![Arc::new(ki)],
+                ));
+            }
+            _ => { /* TODO: don't ignore these! */ }
+        }
+
+        Ok(evs)
+    }
 }

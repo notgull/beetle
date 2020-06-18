@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/texture.rs - A texture that can be drawn onto a window.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use crate::Color;
+use image::DynamicImage;
+
+pub enum Texture {
+    Color(Color),
+    Image(DynamicImage),
 }

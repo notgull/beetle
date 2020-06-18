@@ -5,25 +5,16 @@ authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-approx = "0.3"
-downcast-rs = "1.1.1"
+bitflags = "1.2"
+cfg-if = "0.1"
 euclid = "0.20"
-font-kit = "0.7"
+image = "0.23"
 lazy_static = "1"
 owning_ref = "0.4"
-pathfinder_geometry = "0.5"
 thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["std", "winuser", "windef", "minwindef", "errhandlingapi"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2"
-block = "0.1"
+porcupine = { path = "../porcupine" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-flutterbug = { path = "./api/flutterbug" }
-x11 = "2"
-
-[profile.release]
-lto = true
+flutterbug = { version = "0.1" }

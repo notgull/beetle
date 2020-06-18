@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/event/porc.rs - Translate a Win32 MSG to an event.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -42,10 +42,3 @@
  * limitations under the License.
  * ----------------------------------------------------------------------------------
  */
-
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
-}

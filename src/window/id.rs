@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
- * beetle - Pull-based GUI framework.
+ * src/window/id.rs - Generate a unique ID for each window.
+ * porcupine - Safe wrapper around the graphical parts of Win32.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,9 +43,19 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use std::sync::Mutex;
+
+pub fn unique_id() -> usize {
+    lazy_static::lazy_static! {
+        static ref NEXT_ID_CONTAINER: Mutex<usize> = Mutex::new(0);
+    }
+
+    // TODO: panic-proof this just a bit better
+    let mut lock = NEXT_ID_CONTAINER
+        .lock()
+        .expect("Unable to achieve lock on window ID mutex");
+
+    let res: usize = *lock;
+    *lock += 1;
+    res
 }

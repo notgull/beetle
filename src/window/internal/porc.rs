@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/instance/porc.rs
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,61 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use super::{super::Window, unique_id, GenericWindowInternal};
+use crate::{Event, EventType, Instance, Texture};
+use euclid::default::Rect;
+use porcupine::{
+    ExtendedWindowStyle, OwnedWindowClass, WString, Window as PWindow, WindowClass, WindowStyle,
+};
+use std::{boxed::Box, os::raw::c_int};
+
+pub struct WindowInternal {
+    id: usize,
+    inner: PWindow,
+    event_handler: Option<Box<dyn Fn(Event) -> crate::Result<()>>>,
+    text: String,
+    texture: Option<Texture>,
+}
+
+impl GenericWindowInternal for WindowInternal {
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn new(
+        instance: &Instance,
+        parent: Option<&Window>,
+        class_name: String,
+        text: String,
+        bounds: Rect<u32>,
+        background: Option<Texture>,
+    ) -> crate::Result<Self> {
+        let wclass = WString::new(class_name)?;
+        let wtext = WString::new(&text)?;
+
+        // if the window class isn't already registered, register it
+        let window_class: Box<dyn WindowClass> = match OwnedWindowClass::from_name(wtext) {
+            Ok(o) => Box::new(o),
+            Err((_e, w)) => Box::new(w), // TODO: create and register class
+        };
+
+        PWindow::new(
+            &window_class,
+            &wtext,
+            WindowStyle::CLIP_CHILDREN,
+            ExtendedWindowStyle::CLIENT_EDGE,
+            euclid::rect(
+                bounds.origin.x.try_into()?,
+                bounds.origin.y.try_into()?,
+                bounds.size.width.try_into(),
+                bounds.size.height.try_into()?,
+            ),
+        )
+    }
+}
+
+impl WindowInternal {
+    pub(crate) fn inner_porc_window(&self) -> &PWindow {
+        &self.inner
+    }
 }

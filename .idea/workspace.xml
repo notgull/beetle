@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="125c3fb7-5abc-4d15-b0d4-331eab37d1e8" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/src/drawable.rs" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/src/drawable.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/src/error.rs" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/src/error.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/src/event.rs" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/src/event.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/flutterbug/src/window.rs" beforeDir="false" afterPath="$PROJECT_DIR$/api/flutterbug/src/window.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/error.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/error.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/event.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/event.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/font.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/object/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/object/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/object/textual.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/object/textual.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/object/x11/label.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/object/x11/label.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/object/x11/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/object/x11/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/object/x11/window.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/object/x11/window.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/widget/impls.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/widget/impls.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/widget/internal.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/widget/internal.rs" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectId" id="1cbO7Ym8zBSVcfE6YAgZrvZGYzA" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">
+    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
+    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+  </component>
+  <component name="SvnConfiguration">
+    <configuration />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="125c3fb7-5abc-4d15-b0d4-331eab37d1e8" name="Default Changelist" comment="" />
+      <created>1590793661248</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1590793661248</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="WindowStateProjectService">
+    <state x="302" y="279" width="1372" height="547" key="new project wizard" timestamp="1590795730002">
+      <screen x="67" y="27" width="1853" height="1053" />
+    </state>
+    <state x="302" y="279" width="1372" height="547" key="new project wizard/67.27.1853.1053@67.27.1853.1053" timestamp="1590795730002" />
+  </component>
+</project>

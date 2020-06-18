@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/instance/mod.rs - Instance of the Beetle window factory.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,27 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use crate::Event;
+
+/// Public functions for the Instance item.
+pub trait GuiFactory: Sized {
+    /// Create a new Instance.
+    fn new() -> crate::Result<Self>;
+    /// Get the next event in the queue.
+    fn next_event(&self) -> crate::Result<Event>;
+    /// Send an event into the queue.
+    fn queue_event(&self, ev: Event);
 }
+
+#[cfg(target_os = "linux")]
+mod flutter;
+#[cfg(target_os = "linux")]
+use flutter::Instance as _Instance;
+
+#[cfg(windows)]
+mod porc;
+#[cfg(windows)]
+use porc::Instance as _Instance;
+
+/// Instance of the Beetle GUI factory.
+pub type Instance = _Instance;

@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/window/internal/mod.rs - Traits and definitions for the internal window.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,81 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+pub(crate) use super::{unique_id, Window};
+use crate::{Event, Instance, Texture};
+use euclid::default::Rect;
+use std::hash::{Hash, Hasher};
+
+#[cfg(target_os = "linux")]
+mod flutter;
+#[cfg(target_os = "linux")]
+use flutter::WindowInternal as _WindowInternal;
+
+#[cfg(windows)]
+mod porc;
+#[cfg(windows)]
+use porc::WindowInternal as _WindowInternal;
+
+pub trait EventHandler = Fn(Event) -> crate::Result<()> + Sync + Send + 'static;
+
+pub(crate) fn default_event_handler(_ev: Event) -> crate::Result<()> {
+    Ok(())
 }
+
+/// Public functions of an internal window.
+pub trait GenericWindowInternal: Sized {
+    /// Get a unique ID identifying this window.
+    fn id(&self) -> usize;
+
+    /// Create a new version of this window.
+    fn new(
+        instance: &Instance,
+        parent: Option<&Window>,
+        class_name: String,
+        text: String,
+        bounds: Rect<u32>,
+        background: Option<Texture>,
+    ) -> crate::Result<Self>;
+
+    /// Respond to an event.
+    fn handle_event(&mut self, event: Event) -> crate::Result<()> {
+        // TODO: match evvent to determine handling
+
+        // run the default event handler after everything is done
+        (self.event_handler())(event)
+    }
+
+    /// Get the current event handler.
+    fn event_handler(&self) -> &dyn EventHandler;
+
+    /// Set the event handler.
+    fn set_event_handler<F: EventHandler>(&mut self, evh: F);
+
+    /// Get the text associated with this window. This can either be the title bar or
+    /// the text contained within.
+    fn text(&self) -> &str;
+
+    /// Set the text associated with this window.
+    fn set_text(&mut self, txt: String) -> String;
+}
+
+impl Hash for WindowInternal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
+impl PartialEq for WindowInternal {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        self.id() != other.id()
+    }
+}
+
+impl Eq for WindowInternal {}
+
+/// The internal window
+pub type WindowInternal = _WindowInternal;

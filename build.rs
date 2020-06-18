@@ -43,11 +43,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::{io, path::Path};
-
 fn main() -> Result<(), String> {
-    // use the X11 library
-    println!("cargo:rustc-link-lib=X11");
-
     Ok(())
 }

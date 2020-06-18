@@ -1,7 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - This file is the project root. It should contain global attributes
- *              and reexport crate items.
- * beetle - Simple graphics framework for Rust
+ * src/lib.rs - Root of the Beetle library.
+ * porcupine - Safe wrapper around the graphical parts of Win32.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -44,36 +43,22 @@
  * ----------------------------------------------------------------------------------
  */
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![recursion_limit = "128"]
+#![feature(trait_alias)]
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-compile_error! {"Beetle only targets Windows, MacOS, and Linux."}
-
-mod color;
-pub use color::*;
-
-mod error;
-pub use error::*;
-
+//#![cfg_attr(target_os = "linux", feature("flutterbug"))]
+//#![cfg_attr(windows, feature("porcupine"))]
+pub mod color;
+pub mod error;
 pub mod event;
+pub mod instance;
+pub mod keyboard;
+pub mod texture;
+pub mod window;
+
+pub use color::*;
+pub use error::*;
 pub use event::*;
-
-mod font;
-pub use font::*;
-
-pub mod widget;
-pub use widget::*;
-
-pub mod object;
-pub use object::{ChildWindow, GuiFactory, Label, MainWindow};
-
-pub(crate) mod utils;
-
-pub mod prelude {
-    pub use super::{
-        object::{GuiFactoryBase, LabelBase, MainWindowBase, WindowBase},
-        GenericWidget,
-    };
-}
+pub use instance::*;
+pub use keyboard::*;
+pub use texture::*;
+pub use window::*;

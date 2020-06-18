@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/instance/porc.rs - Beetle GUI Factory for Porcupine
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use crate::Event;
+use std::{collections::VecDeque, sync::Mutex};
+
+pub struct Instance {
+    event_queue: Mutex<VecDeque<Event>>,
 }

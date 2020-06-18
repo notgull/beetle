@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/event/mod.rs - An event from the event loop.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,84 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use crate::{Instance, KeyInfo, Window};
+use std::{any::Any, boxed::Box, sync::Arc};
+
+#[cfg(target_os = "linux")]
+mod flutter;
+#[cfg(windows)]
+mod porc;
+
+/// Types of events deployed from Beetle.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum EventType {
+    /// A key has been pressed.
+    KeyDown,
+    /// A key has been released.
+    KeyUp,
+    /// The window is being repainted.
+    Paint,
+    /// The text of a window has been changed.
+    TextChanged,
+    /// A manual, integer event.
+    Integer(usize),
+    /// A manual, string event.
+    Str(&'static str),
+}
+
+/// An event receieved from the event loop.
+pub struct Event {
+    target_window: Window, // cloned reference
+    ty: EventType,
+    arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
+}
+
+impl Event {
+    /// Create a new event from its raw parts.
+    #[inline]
+    pub fn new(
+        target_window: &Window,
+        ty: EventType,
+        arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
+    ) -> Self {
+        Self {
+            target_window: target_window.clone(),
+            ty,
+            arguments,
+        }
+    }
+
+    /// Get the type of the event.
+    #[inline]
+    pub fn ty(&self) -> EventType {
+        self.ty
+    }
+
+    /// Get the window that this event targets.
+    #[inline]
+    pub fn window(&self) -> &Window {
+        &self.target_window
+    }
+
+    /// Get the arguments used in this event.
+    #[inline]
+    pub fn args(&self) -> &[Arc<dyn Any + Send + Sync + 'static>] {
+        &self.arguments
+    }
+
+    /// If this is a KeyEvent, get the associated KeyInfo.
+    #[inline]
+    pub fn key(&self) -> Option<Arc<KeyInfo>> {
+        match &self.ty {
+            EventType::KeyDown | EventType::KeyUp => Arc::downcast(self.arguments[0].clone()).ok(),
+            _ => None,
+        }
+    }
+
+    /// Dispatch its event to the system handling source.
+    #[inline]
+    pub fn dispatch(self) -> crate::Result<()> {
+        let win = self.target_window.clone();
+        win.handle_event(self)
+    }
 }

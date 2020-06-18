@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/window/internal/flutter.rs - Flutterbug-oriented internal window.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,81 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
+use crate::{Instance, Texture};
+use euclid::default::{Point2D, Rect};
+use flutterbug::{prelude::*, InputContext, Window as FWindow};
+use std::{boxed::Box, mem};
+
+pub struct WindowInternal {
+    inner: FWindow,
+    id: usize,
+    event_handler: Box<dyn EventHandler>,
+    text: String,
+    background: Option<Texture>,
+    ic: InputContext,
+}
+
+impl GenericWindowInternal for WindowInternal {
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn new(
+        instance: &Instance,
+        parent: Option<&Window>,
+        _class_name: String,
+        text: String,
+        bounds: Rect<u32>,
+        background: Option<Texture>,
+    ) -> crate::Result<Self> {
+        // create the struct representing the internal flutterbug window
+        let dpy = instance.display();
+        let inner = dpy.create_simple_window(
+            parent.map(|p| p.inner_flutter_window()).as_deref(),
+            Point2D::new(bounds.origin.x as i32, bounds.origin.y as i32),
+            bounds.size,
+            1,
+            dpy.default_white_pixel()?,
+            dpy.default_white_pixel()?,
+        )?;
+        Ok(WindowInternal {
+            id: unique_id(),
+            event_handler: Box::new(super::default_event_handler),
+            text,
+            background,
+            ic: inner.input_context(instance.im())?,
+            inner,
+        })
+    }
+
+    fn event_handler(&self) -> &dyn EventHandler {
+        &*self.event_handler
+    }
+
+    fn set_event_handler<F: EventHandler>(&mut self, evh: F) {
+        self.event_handler = Box::new(evh);
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn set_text(&mut self, txt: String) -> String {
+        let mut res = txt;
+        mem::swap(&mut self.text, &mut res);
+        res
+    }
+}
+
+impl WindowInternal {
+    /// Get the internal Flutterbug window.
+    pub fn inner_flutter_window(&self) -> &FWindow {
+        &self.inner
+    }
+
+    /// Get the input context.
+    pub fn ic(&self) -> &InputContext {
+        &self.ic
+    }
 }
