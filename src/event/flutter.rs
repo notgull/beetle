@@ -44,27 +44,64 @@
  */
 
 use super::{Event, EventType};
-use crate::{Instance, KeyInfo, KeyType};
-use flutterbug::{prelude::*, Event as FEvent, EventType as FEventType};
-use std::sync::Arc;
+use crate::{Instance, KeyInfo, KeyType, MouseButton};
+use euclid::default::Point2D;
+use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};
+use smallvec::SmallVec;
+use std::{convert::TryInto, sync::Arc};
 
 impl Event {
     /// Translate a Flutterbug event to a Beetle event.
-    pub fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<Vec<Self>> {
-        // optimize for at least one event
-        let mut evs = Vec::with_capacity(1);
+    pub fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<SmallVec<[Self; 2]>> {
+        // optimize for at least two events
+        // TODO: this can probably be a TinyVec, if we want to go that route
+        let mut evs = SmallVec::new();
         let ty = fev.kind();
-        let assoc_window = instance
-            .get_window(fev.window())
-            .ok_or_else(|| crate::Error::WindowNotFound)?;
+        let assoc_window = match instance.flutterbug_get_window(fev.window()) {
+            Some(w) => w,
+            None => {
+                // we don't care about this event, just return nothing
+                log::warn!("Found event without a corresponding window: {:?}", fev);
+                return Ok(evs);
+            }
+        };
+
+        log::debug!("Translating Flutterbug Event: {:?}", &fev);
 
         match fev {
+            // X11 events involving a key press
             FEvent::Key(k) => {
                 // get the key information from the event
                 let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.ic())?;
                 let mut ki = KeyInfo::new(KeyType::from_keysym(
                     ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
                 ));
+
+                // set function key info
+                #[inline]
+                fn fn_key_info<F>(
+                    ki: &mut KeyInfo,
+                    k: &flutterbug::KeyEvent,
+                    key: FunctionKeys,
+                    setter: F,
+                ) where
+                    F: FnOnce(&mut KeyInfo) -> (),
+                {
+                    if k.has_function(key) {
+                        setter(ki);
+                    }
+                }
+
+                fn_key_info(&mut ki, &k, FunctionKeys::CONTROL, |k| k.set_ctrl(true));
+                fn_key_info(&mut ki, &k, FunctionKeys::ALT, |k| k.set_alt(true));
+                fn_key_info(&mut ki, &k, FunctionKeys::SHIFT, |k| k.set_shift(true));
+
+                // key press mouse location
+                let loc: Option<Point2D<u32>> = if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
+                    Some(Point2D::new(x, y))
+                } else {
+                    None
+                };
 
                 evs.push(Event::new(
                     &assoc_window,
@@ -73,8 +110,64 @@ impl Event {
                         FEventType::KeyRelease => EventType::KeyUp,
                         _ => unreachable!(),
                     },
-                    vec![Arc::new(ki)],
+                    vec![Arc::new(ki), Arc::new(loc)],
                 ));
+            }
+            // Re-rendering of the window
+            FEvent::Expose(e) => {
+                // if the size isn't the same, set up a changed bounds event
+                let old_bounds = assoc_window.bounds();
+                let new_bounds =
+                    euclid::rect(e.x().try_into()?, e.y().try_into()?, e.width(), e.height());
+
+                if old_bounds != new_bounds {
+                    // Note: The Arc(false) at the end tells the event handler that
+                    // this event was emitted by the event loop and not from the
+                    // set_bounds function. It signals that the bounds change should
+                    // not be forwarded to the X11 backend.
+                    evs.push(Event::new(
+                        &assoc_window,
+                        EventType::BoundsChanging,
+                        vec![Arc::new(old_bounds), Arc::new(new_bounds), Arc::new(false)],
+                    ));
+                }
+
+                evs.push(Event::new(&assoc_window, EventType::Paint, vec![]));
+                // TODO: create g-object
+            }
+            // Press/release of a mouse button
+            #[allow(non_upper_case_globals)]
+            FEvent::Button(b) => {
+                use flutterbug::x11::xlib::{Button1, Button2, Button3, Button4, Button5};
+                if let (Ok(x), Ok(y)) = (b.x().try_into(), b.y().try_into()) {
+                    evs.push(Event::new(&assoc_window, match b.kind() {
+                        FEventType::ButtonPress => EventType::MouseButtonDown,
+                        FEventType::ButtonRelease => EventType::MouseButtonUp,
+                        _ => unreachable!(),
+                    // First element is the X/Y coordinates. Second is the mouse button pressed.
+                    }, vec![Arc::new(Point2D::<u32>::new(x, y)), Arc::new(match b.button() {
+                        Button1 => MouseButton::Button1,
+                        Button2 => MouseButton::Button2,
+                        Button3 => MouseButton::Button3,
+                        Button4 => MouseButton::Button4,
+                        Button5 => MouseButton::Button5,
+                        _ => return Err(crate::Error::StaticMsg("Unexpected X11 mouse input")),
+                    })]));
+                }
+            }
+            // Special client messages
+            FEvent::ClientMessage(c) => {
+                // Check if the client message corresponds to the pre-set delete window atom
+                if AsRef::<[Atom]>::as_ref(&c.data())[0] == instance.delete_window_atom() {
+                    evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
+
+                    // also send a quit event if this is the top-level window
+                    if assoc_window.is_top_level() {
+                        let mut quit_ev = Event::new(&assoc_window, EventType::Quit, vec![]);
+                        quit_ev.set_is_exit_event(true);
+                        evs.push(quit_ev);
+                    }
+                }
             }
             _ => { /* TODO: don't ignore these! */ }
         }

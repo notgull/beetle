@@ -47,20 +47,27 @@
 use flutterbug::FlutterbugError;
 #[cfg(windows)]
 use porcupine::Error as PorcupineError;
-use std::{boxed::Box, error::Error as SError};
+use std::num::TryFromIntError;
 use thiserror::Error;
 
 /// Common error type returned by Beetle functions.
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("{0}")]
+    StaticMsg(&'static str),
+
     #[cfg(target_os = "linux")]
     #[error("{0}")]
     Flutter(#[from] FlutterbugError),
+    #[error("{0}")]
+    TryFromInt(#[from] TryFromIntError),
 
     #[error("Unable to find window in window mappings")]
     WindowNotFound,
     #[error("Unable to find key symbol corresponding to input")]
     KeysymNotFound,
+    #[error("Window ID did not downcast to a valid element")]
+    WindowIDNoDowncast,
 }
 
 /// Result type that returns beetle::Error to make things more conveinent.

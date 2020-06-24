@@ -44,10 +44,20 @@
  */
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
-use crate::{Instance, Texture};
+use crate::{EventType, Instance, Texture};
 use euclid::default::{Point2D, Rect};
-use flutterbug::{prelude::*, InputContext, Window as FWindow};
-use std::{boxed::Box, mem};
+use flutterbug::{
+    prelude::*, Event as FEvent, EventMask, EventType as FEventType, ExposeEvent, InputContext,
+    Window as FWindow,
+};
+use smallvec::{smallvec, SmallVec};
+use std::{
+    boxed::Box,
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+    mem,
+    sync::Arc,
+};
 
 pub struct WindowInternal {
     inner: FWindow,
@@ -56,9 +66,12 @@ pub struct WindowInternal {
     text: String,
     background: Option<Texture>,
     ic: InputContext,
+    top_level: bool,
+    bounds: Rect<u32>,
 }
 
 impl GenericWindowInternal for WindowInternal {
+    #[inline]
     fn id(&self) -> usize {
         self.id
     }
@@ -66,10 +79,10 @@ impl GenericWindowInternal for WindowInternal {
     fn new(
         instance: &Instance,
         parent: Option<&Window>,
-        _class_name: String,
         text: String,
         bounds: Rect<u32>,
         background: Option<Texture>,
+        top_level: bool,
     ) -> crate::Result<Self> {
         // create the struct representing the internal flutterbug window
         let dpy = instance.display();
@@ -81,43 +94,159 @@ impl GenericWindowInternal for WindowInternal {
             dpy.default_white_pixel()?,
             dpy.default_white_pixel()?,
         )?;
+
+        inner.set_protocols(&mut [instance.delete_window_atom()])?;
+        inner.store_name(&text)?;
+        inner.select_input(EventMask::EXPOSURE_MASK)?;
+
         Ok(WindowInternal {
             id: unique_id(),
             event_handler: Box::new(super::default_event_handler),
+            bounds,
             text,
             background,
             ic: inner.input_context(instance.im())?,
             inner,
+            top_level,
         })
     }
 
+    #[inline]
     fn event_handler(&self) -> &dyn EventHandler {
         &*self.event_handler
     }
 
+    #[inline]
     fn set_event_handler<F: EventHandler>(&mut self, evh: F) {
         self.event_handler = Box::new(evh);
     }
 
-    fn text(&self) -> &str {
-        &self.text
+    #[inline]
+    fn text(&mut self) -> &mut str {
+        &mut self.text
     }
 
-    fn set_text(&mut self, txt: String) -> String {
+    #[inline]
+    fn set_text(&mut self, txt: String) -> crate::Result<String> {
+        self.inner.store_name(&txt)?;
+
         let mut res = txt;
         mem::swap(&mut self.text, &mut res);
-        res
+        Ok(res)
+    }
+
+    #[inline]
+    fn is_top_level(&self) -> bool {
+        self.top_level
+    }
+
+    #[inline]
+    fn bounds(&self) -> Rect<u32> {
+        self.bounds
+    }
+
+    fn set_bounds(&mut self, bounds: Rect<u32>, backend: bool) -> crate::Result<Rect<u32>> {
+        if backend {
+            self.inner.set_bounds(
+                Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
+                bounds.size,
+            )?;
+        }
+
+        let mut res = bounds;
+        mem::swap(&mut self.bounds, &mut res);
+        Ok(res)
+    }
+
+    #[inline]
+    fn show(&self) -> crate::Result<()> {
+        Ok(self.inner.map(true)?)
+    }
+
+    fn receive_events(&mut self, events: &[EventType]) -> crate::Result<()> {
+        // figure out which events correspond to which X11 event masks
+        lazy_static::lazy_static! {
+            static ref X11_EVENT_MAPPING: HashMap<EventType, SmallVec<[EventMask; 1]>> = {
+                let mut map = HashMap::new();
+                map.insert(EventType::KeyDown, smallvec![EventMask::KEY_PRESS_MASK]);
+                map.insert(EventType::KeyUp, smallvec![EventMask::KEY_RELEASE_MASK]);
+
+                map.insert(EventType::MouseButtonDown, smallvec![EventMask::BUTTON_PRESS_MASK]);
+                map.insert(EventType::MouseButtonUp, smallvec![EventMask::BUTTON_RELEASE_MASK]);
+
+                // TODO: add more events
+                map
+            };
+        }
+
+        // insert the corresponding event masks into the event set
+        let event_set = events
+            .iter()
+            .map(|et| X11_EVENT_MAPPING.get(et))
+            .filter(Option::is_some)
+            .flat_map(|fetl| fetl.unwrap().iter())
+            .map(|fet| *fet)
+            .collect::<HashSet<EventMask>>();
+
+        // exit early if the event set is empty
+        if event_set.is_empty() {
+            return Ok(()); // TODO: maybe undefined behavior if this function is called more than once?
+        }
+
+        let mut sum_event_mask = EventMask::EXPOSURE_MASK; // EXPOSURE_MASK is there no matter what
+        for e in event_set {
+            sum_event_mask = sum_event_mask | e;
+        }
+
+        Ok(self.inner.select_input(sum_event_mask)?)
+    }
+
+    fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()> {
+        let bounds = bounds.or_else(|| Some(self.bounds())).unwrap(); // shouldn't fail
+
+        let ev = ExposeEvent::new(
+            FEventType::Expose,
+            0,
+            self.inner.display_reference(),
+            &self.inner,
+            true,
+            bounds.origin.x.try_into()?,
+            bounds.origin.y.try_into()?,
+            bounds.size.width,
+            bounds.size.height,
+            1,
+        )?;
+        let ev = FEvent::Expose(ev);
+        Ok(ev.send(
+            self.inner.display_reference(),
+            &self.inner,
+            true,
+            EventMask::EXPOSURE_MASK,
+        )?)
+    }
+
+    fn background(&mut self) -> Option<&mut Texture> {
+        self.background.as_mut()
+    }
+
+    fn set_background(&mut self, texture: Option<Texture>) {
+        self.background = texture;
+        // should send a repaint event on the top level
+    }
+
+    fn take_background(&mut self) -> Option<Texture> {
+        self.background.take()
     }
 }
 
 impl WindowInternal {
     /// Get the internal Flutterbug window.
-    pub fn inner_flutter_window(&self) -> &FWindow {
-        &self.inner
+    pub fn inner_flutter_window(&mut self) -> &mut FWindow {
+        &mut self.inner
     }
 
     /// Get the input context.
-    pub fn ic(&self) -> &InputContext {
-        &self.ic
+    pub fn ic(&mut self) -> &mut InputContext {
+        &mut self.ic
     }
 }

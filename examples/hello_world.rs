@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * build.rs - Build script, specify features and flags for the process.
- * beetle - Simple graphics framework for Rust
+ * examples/hello_world.rs - Basic opening of a window.
+ * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,6 +43,48 @@
  * ----------------------------------------------------------------------------------
  */
 
-fn main() -> Result<(), String> {
+use beetle::{EventType, Instance, Result};
+use euclid::rect;
+
+fn main() -> Result<()> {
+    env_logger::init();
+
+    let instance = Instance::new()?;
+    let window = instance.create_window(
+        None,
+        "Hello world!".to_string(),
+        rect(0, 0, 400, 200),
+        None,
+        true,
+    )?;
+
+    window.receive_events(&[EventType::MouseButtonDown, EventType::KeyDown])?;
+    window.show()?; 
+
+    'evloop: loop {
+        let event = instance.next_event()?;
+
+        // do something if this is a mouse event
+        match event.ty() {
+            EventType::MouseButtonDown => {
+                let coords = event.click_location().unwrap();
+                println!("Mouse click at ({}, {})", coords.x, coords.y);
+            }
+            EventType::KeyDown => {
+                let key = event.key().unwrap();
+                println!("Key Information: {:?}", key);
+            }
+            _ => ()
+        }
+
+        // if this is a quit event, end the event loop
+        // otherwise, dispatch it to its intended target
+        if event.is_exit_event() {
+            break 'evloop;
+        } else {
+            event.dispatch()?;
+        }
+    }
+
     Ok(())
 }

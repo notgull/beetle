@@ -10,11 +10,16 @@ cfg-if = "0.1"
 euclid = "0.20"
 image = "0.23"
 lazy_static = "1"
-owning_ref = "0.4"
+log = "0.4"
+parking_lot = { version = "0.10", features = ["nightly"] }
+smallvec = { version = "1.4", features = ["union"] }
 thiserror = "1"
+
+[dev-dependencies]
+env_logger = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 porcupine = { path = "../porcupine" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-flutterbug = { version = "0.1" }
+flutterbug = { version = "0.1.1" }

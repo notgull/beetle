@@ -43,8 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Instance, KeyInfo, Window};
-use std::{any::Any, boxed::Box, sync::Arc};
+use crate::{KeyInfo, MouseButton, Window};
+use euclid::default::{Point2D, Rect};
+use std::{any::Any, fmt, sync::Arc};
 
 #[cfg(target_os = "linux")]
 mod flutter;
@@ -58,10 +59,30 @@ pub enum EventType {
     KeyDown,
     /// A key has been released.
     KeyUp,
+    /// The window is about to be repainted.
+    AboutToPaint,
     /// The window is being repainted.
     Paint,
+    /// The text of a window is currently changing.
+    TextChanging,
     /// The text of a window has been changed.
     TextChanged,
+    /// The application is closing.
+    Quit,
+    /// A single window is closing.
+    Close,
+    /// The window's bounds are being changed.
+    BoundsChanging,
+    /// The window's bounds have changed.
+    BoundsChanged,
+    /// The window's background is being changed.
+    BackgroundChanging,
+    /// The window's background has been changed.
+    BackgroundChanged,
+    /// The window has had a mouse button depressed on it.
+    MouseButtonDown,
+    /// The window has had a mouse button released on it.
+    MouseButtonUp,
     /// A manual, integer event.
     Integer(usize),
     /// A manual, string event.
@@ -73,6 +94,18 @@ pub struct Event {
     target_window: Window, // cloned reference
     ty: EventType,
     arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
+    needs_quit: bool,
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Event")
+            .field("target_window", &self.target_window)
+            .field("ty", &self.ty)
+            .field("needs_quit", &self.needs_quit)
+            .field("arguments", &"Unable to Process".to_string())
+            .finish()
+    }
 }
 
 impl Event {
@@ -87,6 +120,7 @@ impl Event {
             target_window: target_window.clone(),
             ty,
             arguments,
+            needs_quit: false,
         }
     }
 
@@ -104,17 +138,70 @@ impl Event {
 
     /// Get the arguments used in this event.
     #[inline]
-    pub fn args(&self) -> &[Arc<dyn Any + Send + Sync + 'static>] {
+    pub fn arguments(&self) -> &[Arc<dyn Any + Send + Sync + 'static>] {
         &self.arguments
+    }
+
+    /// Helper Function to downcast an Arc to get information regarding an event.
+    #[inline]
+    fn event_info<T: Any + Send + Sync + 'static>(
+        &self,
+        event_types: &[EventType],
+        index: usize,
+    ) -> Option<Arc<T>> {
+        if event_types.contains(&self.ty) {
+            Arc::downcast(self.arguments.get(index)?.clone()).ok()
+        } else {
+            None
+        }
     }
 
     /// If this is a KeyEvent, get the associated KeyInfo.
     #[inline]
     pub fn key(&self) -> Option<Arc<KeyInfo>> {
-        match &self.ty {
-            EventType::KeyDown | EventType::KeyUp => Arc::downcast(self.arguments[0].clone()).ok(),
-            _ => None,
-        }
+        self.event_info(&[EventType::KeyDown, EventType::KeyUp], 0)
+    }
+
+    /// If this is a key event, get where the mouse was when the key was pressed, if applicable.
+    #[inline]
+    pub fn press_location(&self) -> Option<Arc<Option<Point2D<u32>>>> {
+        self.event_info(&[EventType::KeyDown, EventType::KeyUp], 1)
+    }
+
+    /// If this is a resize event, get the old size.
+    #[inline]
+    pub fn old_size(&self) -> Option<Arc<Rect<u32>>> {
+        self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 0)
+    }
+
+    /// If this is a resize event, get the new size.
+    #[inline]
+    pub fn new_size(&self) -> Option<Arc<Rect<u32>>> {
+        self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 1)
+    }
+
+    /// If this is a text change event, get the old text.
+    #[inline]
+    pub fn old_text(&self) -> Option<Arc<String>> {
+        self.event_info(&[EventType::TextChanging, EventType::TextChanged], 0)
+    }
+
+    /// If this is a text change event, get the new text.
+    #[inline]
+    pub fn new_text(&self) -> Option<Arc<String>> {
+        self.event_info(&[EventType::TextChanging, EventType::TextChanged], 1)
+    }
+
+    /// If this is a mouse button event, get the point where the mouse clicked.
+    #[inline]
+    pub fn click_location(&self) -> Option<Arc<Point2D<u32>>> {
+        self.event_info(&[EventType::MouseButtonUp, EventType::MouseButtonDown], 0)
+    }
+
+    /// If this is a mouse button event, get the button that has been clicked.
+    #[inline]
+    pub fn click_button(&self) -> Option<Arc<MouseButton>> {
+        self.event_info(&[EventType::MouseButtonUp, EventType::MouseButtonDown], 1)
     }
 
     /// Dispatch its event to the system handling source.
@@ -122,5 +209,17 @@ impl Event {
     pub fn dispatch(self) -> crate::Result<()> {
         let win = self.target_window.clone();
         win.handle_event(self)
+    }
+
+    /// Tell if the event requires the application to exit.
+    #[inline]
+    pub fn is_exit_event(&self) -> bool {
+        self.needs_quit
+    }
+
+    /// Set whether or not this is a quit event.
+    #[inline]
+    pub fn set_is_exit_event(&mut self, is_quit: bool) {
+        self.needs_quit = is_quit;
     }
 }

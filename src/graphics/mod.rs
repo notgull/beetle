@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/instance/porc.rs - Beetle GUI Factory for Porcupine
+ * src/graphics/mod.rs - Graphics object and API.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,9 +43,17 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::Event;
-use std::{collections::VecDeque, sync::Mutex};
+use crate::Color;
+use euclid::default::Point2D;
 
-pub struct Instance {
-    event_queue: Mutex<VecDeque<Event>>,
+/// The graphics object.
+pub trait Graphics {
+    /// Set the foreground color.
+    fn set_foreground(&self, clr: Color) -> crate::Result<()>;
+    
+    /// Set the background color.
+    fn set_background(&self, clr: Color) -> crate::Result<()>;
+
+    /// Draw a line from one point to another, using the foreground color.
+    fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()>;
 }

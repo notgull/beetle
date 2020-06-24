@@ -43,14 +43,15 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Event, EventType, GuiFactory, Instance, Texture};
+use crate::{Event, EventType, Instance, ReadOnlyMappedMutexGuard, Texture};
 use euclid::default::Rect;
-use owning_ref::MutexGuardRef;
+use parking_lot::Mutex;
 use std::{
     any::Any,
-    boxed::Box,
+    collections::HashSet,
+    fmt,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex, RwLock},
+    sync::Arc,
 };
 
 mod id;
@@ -60,16 +61,46 @@ pub mod internal;
 pub use internal::EventHandler;
 pub use internal::*;
 
-static INNER_WIDGET_MUTEX_FAIL: &'static str = "Unable to achieve lock on inner widget mutex";
+lazy_static::lazy_static! {
+    // default events allowed
+    static ref DEFAULT_EVENTS: [EventType; 10] = [
+        EventType::AboutToPaint,
+        EventType::Paint,
+        EventType::TextChanging,
+        EventType::TextChanged,
+        EventType::Quit,
+        EventType::Close,
+        EventType::BoundsChanging,
+        EventType::BoundsChanged,
+        EventType::BackgroundChanging,
+        EventType::BackgroundChanged
+    ];
+}
 
 /// A rectangle of pixels on the screen, in the most basic terms. This structure is actually
 /// a cheaply copyable wrapper around the internal window object.
+///
+/// It is of note that Beetle uses the term "Window" differently than how other graphics
+/// frameworks use it. In the most basic terms, a Window is a rectangle of pixels that
+/// appear on the screen. The frame containing all of your widgets is a Window. The widgets
+/// within that frame are all considered Windows. In some cases, you can even consider
+/// the screen itself a Window.
+///
+/// The Window object is created using the Instance object.
 pub struct Window {
     inner: Arc<Mutex<WindowInternal>>,
-    instance: Arc<Instance>,
+    handled_events: Arc<Mutex<HashSet<EventType>>>,
+    instance: Instance,
+    id: usize,
 
     // make sure it owns any extra data
     _extra_data: Option<Arc<dyn Any>>,
+}
+
+impl fmt::Debug for Window {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Beetle Window #{}", self.id(),)
+    }
 }
 
 impl Hash for Window {
@@ -94,6 +125,8 @@ impl Clone for Window {
     fn clone(&self) -> Self {
         Self::from_raw(
             self.inner.clone(),
+            self.handled_events.clone(),
+            self.id,
             self.instance.clone(),
             self._extra_data.clone(),
         )
@@ -101,87 +134,167 @@ impl Clone for Window {
 }
 
 impl Window {
+    /// Internal function to create a new Window.
     #[inline]
     pub(crate) fn from_raw(
         inner: Arc<Mutex<WindowInternal>>,
-        instance: Arc<Instance>,
+        handled_events: Arc<Mutex<HashSet<EventType>>>,
+        id: usize,
+        instance: Instance,
         extra_data: Option<Arc<dyn Any>>,
     ) -> Self {
         Self {
             inner,
-
+            handled_events,
+            id,
             instance,
             _extra_data: extra_data,
         }
     }
 
-    /// Create a new window.
-    pub fn new(
-        instance: &Arc<Instance>,
-        parent: Option<&Window>,
-        class_name: String,
-        text: String,
-        bounds: Rect<u32>,
-        background: Option<Texture>,
-    ) -> crate::Result<Self> {
-        let instance = instance.clone();
-        let internal =
-            WindowInternal::new(&instance, parent, class_name, text, bounds, background)?;
-
-        let this = Self::from_raw(Arc::new(Mutex::new(internal)), instance, None);
-        // TODO: register
-        Ok(this)
-    }
-
     /// Get the text associated with this window.
     #[inline]
-    pub fn text(&self) -> MutexGuardRef<'_, WindowInternal, str> {
-        MutexGuardRef::new(self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL)).map(|i| i.text())
+    pub fn text(&self) -> ReadOnlyMappedMutexGuard<'_, str> {
+        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.text())
     }
 
     /// Set the text associated with this window. This will emit a TextChanged event.
     #[inline]
     pub fn set_text(&self, text: String) -> crate::Result<()> {
-        let mut l = self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL);
+        let mut l = self.inner.lock();
         self.instance.queue_event(Event::new(
             self,
-            EventType::TextChanged,
-            vec![Arc::new(text.clone()), Arc::new(l.set_text(text))],
+            EventType::TextChanging,
+            vec![Arc::new(l.text().to_string()), Arc::new(text)],
         ));
         Ok(())
     }
 
-    /// Set the event handler.
+    fn set_text_internal(&self, text: String) -> crate::Result<()> {
+        let mut l = self.inner.lock();
+        let cloned_text = Arc::new(text.clone());
+        self.instance.queue_event(Event::new(
+            self,
+            EventType::TextChanged,
+            vec![Arc::new(l.set_text(text)?), cloned_text],
+        ));
+        Ok(())
+    }
+
+    /// Set the event handler. This will not emit an event.
+    ///
+    /// The Event Handler is a function run after normal event processing is done.
     #[inline]
     pub fn set_event_handler<F: EventHandler>(&self, evh: F) {
-        let mut l = self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL);
+        let mut l = self.inner.lock();
         l.set_event_handler(evh);
     }
 
     /// Handle an event.
     #[inline]
     pub fn handle_event(&self, event: Event) -> crate::Result<()> {
-        let mut l = self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL);
-        l.handle_event(event)
+        match event.ty() {
+            EventType::BoundsChanging => self.set_bounds_internal(
+                *event.new_size().unwrap(),
+                *Arc::downcast(event.arguments()[2].clone()).unwrap(),
+            )?,
+            EventType::TextChanging => {
+                self.set_text_internal((*event.new_text().unwrap()).clone())?
+            }
+            EventType::AboutToPaint => self.repaint(None)?,
+            _ => { /* do nothing */ }
+        }
+
+        let mut l = self.inner.lock();
+        l.handle_event(&event)
+    }
+
+    /// Define which events should be handled by the window.
+    #[inline]
+    pub fn receive_events(&self, event_types: &[EventType]) -> crate::Result<()> {
+        let mut he = self.handled_events.lock();
+        // empty the hash set and fill it with event types
+        he.clear();
+        he.extend(event_types);
+
+        let mut l = self.inner.lock();
+        l.receive_events(event_types)
+    }
+
+    /// Does this window receive this event type?
+    #[inline]
+    pub fn receives_event(&self, event_type: &EventType) -> bool {
+        let he = self.handled_events.lock();
+        DEFAULT_EVENTS.contains(event_type) || he.contains(event_type)
     }
 
     /// Get the ID associated with this window.
     #[inline]
     pub fn id(&self) -> usize {
-        self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL).id()
+        self.id
+    }
+
+    /// Tell if this window is a top-level window.
+    #[inline]
+    pub fn is_top_level(&self) -> bool {
+        self.inner.lock().is_top_level()
+    }
+
+    /// Get the bounds of this window.
+    #[inline]
+    pub fn bounds(&self) -> Rect<u32> {
+        self.inner.lock().bounds()
+    }
+
+    fn set_bounds_internal(&self, bounds: Rect<u32>, backend: bool) -> crate::Result<()> {
+        let mut l = self.inner.lock();
+
+        self.instance.queue_event(Event::new(
+            self,
+            EventType::BoundsChanged,
+            vec![Arc::new(l.set_bounds(bounds, backend)?), Arc::new(bounds)],
+        ));
+        Ok(())
+    }
+
+    /// Set the bounds of the window.
+    #[inline]
+    pub fn set_bounds(&self, bounds: Rect<u32>) -> crate::Result<()> {
+        // this should just send a BoundsChaning event through, since that calls
+        // set_bounds_internal when dispatched
+        let l = self.inner.lock();
+        self.instance.queue_event(Event::new(
+            self,
+            EventType::BoundsChanging,
+            // Note: The Arc(true) at the end tells the evet
+            vec![Arc::new(l.bounds()), Arc::new(bounds), Arc::new(true)],
+        ));
+        Ok(())
+    }
+
+    /// Display the window.
+    #[inline]
+    pub fn show(&self) -> crate::Result<()> {
+        self.inner.lock().show()
+    }
+
+    /// Force a repaint operation on the window.
+    #[inline]
+    pub fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()> {
+        self.inner.lock().repaint(bounds)
     }
 }
 
 #[cfg(target_os = "linux")]
 impl Window {
-    pub(crate) fn inner_flutter_window(
-        &self,
-    ) -> MutexGuardRef<'_, WindowInternal, flutterbug::Window> {
-        MutexGuardRef::new(self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL))
-            .map(|i| i.inner_flutter_window())
+    /// The inner Flutterbug window.
+    #[inline]
+    pub(crate) fn inner_flutter_window(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::Window> {
+        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_flutter_window())
     }
 
-    pub(crate) fn ic(&self) -> MutexGuardRef<'_, WindowInternal, flutterbug::InputContext> {
-        MutexGuardRef::new(self.inner.lock().expect(INNER_WIDGET_MUTEX_FAIL)).map(|i| i.ic())
+    #[inline]
+    pub(crate) fn ic(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::InputContext> {
+        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.ic())
     }
 }

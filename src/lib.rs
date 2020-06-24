@@ -52,6 +52,8 @@ pub mod error;
 pub mod event;
 pub mod instance;
 pub mod keyboard;
+pub mod mouse;
+pub mod ro_mmg;
 pub mod texture;
 pub mod window;
 
@@ -60,5 +62,9 @@ pub use error::*;
 pub use event::*;
 pub use instance::*;
 pub use keyboard::*;
+pub use mouse::*;
+pub use ro_mmg::*;
 pub use texture::*;
 pub use window::*;
+
+pub mod prelude {}

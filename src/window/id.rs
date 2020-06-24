@@ -43,19 +43,20 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
+/// Get an ID that is guaranteed to be unique to the window within the
+/// bounds of the program.
 pub fn unique_id() -> usize {
     lazy_static::lazy_static! {
         static ref NEXT_ID_CONTAINER: Mutex<usize> = Mutex::new(0);
     }
 
-    // TODO: panic-proof this just a bit better
-    let mut lock = NEXT_ID_CONTAINER
-        .lock()
-        .expect("Unable to achieve lock on window ID mutex");
+    let mut lock = NEXT_ID_CONTAINER.lock();
 
     let res: usize = *lock;
+    // if we ever have more windows than addresses available in the
+    // address space, we have bigger problems
     *lock += 1;
     res
 }

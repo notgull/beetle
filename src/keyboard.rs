@@ -43,6 +43,8 @@
  * ----------------------------------------------------------------------------------
  */
 
+use std::convert::TryInto;
+
 /// The types of keys that can be depressed on the keyboard.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum KeyType {
@@ -248,7 +250,7 @@ impl Default for KeyType {
 }
 
 /// A key being pressed or released.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct KeyInfo {
     ty: KeyType,
     is_ctrl: bool,
@@ -383,10 +385,12 @@ impl KeyInfo {
 #[cfg(target_os = "linux")]
 mod x11_keysym_table {
     use super::KeyType::{self, *};
+
+    #[allow(non_upper_case_globals)]
     const Un: KeyType = Unknown;
 
     // table of x11 keysyms to beetle keycodes
-    pub static X11_KEYSYM_TABLE: [KeyType; 0xAF] = [
+    pub const X11_KEYSYM_TABLE: [KeyType; 0xAF] = [
         // the first 0x1F numbers are unused
         Un,
         Un,
@@ -554,6 +558,7 @@ mod x11_keysym_table {
         Space,                   // 0xa0 = XK_nobreakspace
         InvertedExclamationMark, // 0xa1 = XK_exclamdown
         // TODO: this block contains characters that should be filled out
+        // such as shift, caps lock, etc
         Un,
         Un,
         Un,
@@ -577,7 +582,9 @@ impl KeyType {
     /// Convert an X11 keysym to a key type.
     #[inline]
     pub fn from_keysym(ks: flutterbug::KeySym) -> KeyType {
-        let u = ks as usize;
+        let u: usize = ks
+            .try_into()
+            .expect("Unable to convert KeySym into array index");
         if u >= x11_keysym_table::X11_KEYSYM_TABLE.len() {
             KeyType::Unknown
         } else {

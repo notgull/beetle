@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/instance/mod.rs - Instance of the Beetle window factory.
+ * src/mouse_button.rs - Enums and structs representing mouse actions.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,27 +43,12 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::Event;
-
-/// Public functions for the Instance item.
-pub trait GuiFactory: Sized {
-    /// Create a new Instance.
-    fn new() -> crate::Result<Self>;
-    /// Get the next event in the queue.
-    fn next_event(&self) -> crate::Result<Event>;
-    /// Send an event into the queue.
-    fn queue_event(&self, ev: Event);
+/// The possible buttons that can be depressed on the mouse.
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub enum MouseButton {
+    Button1,
+    Button2,
+    Button3,
+    Button4,
+    Button5,
 }
-
-#[cfg(target_os = "linux")]
-mod flutter;
-#[cfg(target_os = "linux")]
-use flutter::Instance as _Instance;
-
-#[cfg(windows)]
-mod porc;
-#[cfg(windows)]
-use porc::Instance as _Instance;
-
-/// Instance of the Beetle GUI factory.
-pub type Instance = _Instance;

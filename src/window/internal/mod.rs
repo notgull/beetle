@@ -44,9 +44,8 @@
  */
 
 pub(crate) use super::{unique_id, Window};
-use crate::{Event, Instance, Texture};
+use crate::{Event, EventType, Instance, Texture};
 use euclid::default::Rect;
-use std::hash::{Hash, Hasher};
 
 #[cfg(target_os = "linux")]
 mod flutter;
@@ -58,9 +57,10 @@ mod porc;
 #[cfg(windows)]
 use porc::WindowInternal as _WindowInternal;
 
-pub trait EventHandler = Fn(Event) -> crate::Result<()> + Sync + Send + 'static;
+pub trait EventHandler = Fn(&Event) -> crate::Result<()> + Sync + Send + 'static;
 
-pub(crate) fn default_event_handler(_ev: Event) -> crate::Result<()> {
+pub(crate) fn default_event_handler(_ev: &Event) -> crate::Result<()> {
+    log::debug!("Found event: {:?}", _ev);
     Ok(())
 }
 
@@ -73,19 +73,21 @@ pub trait GenericWindowInternal: Sized {
     fn new(
         instance: &Instance,
         parent: Option<&Window>,
-        class_name: String,
         text: String,
         bounds: Rect<u32>,
         background: Option<Texture>,
+        top_level: bool,
     ) -> crate::Result<Self>;
 
     /// Respond to an event.
-    fn handle_event(&mut self, event: Event) -> crate::Result<()> {
-        // TODO: match evvent to determine handling
-
+    #[inline]
+    fn handle_event(&mut self, event: &Event) -> crate::Result<()> {
         // run the default event handler after everything is done
         (self.event_handler())(event)
     }
+
+    /// Receive certain types of events.
+    fn receive_events(&mut self, events: &[EventType]) -> crate::Result<()>;
 
     /// Get the current event handler.
     fn event_handler(&self) -> &dyn EventHandler;
@@ -95,29 +97,35 @@ pub trait GenericWindowInternal: Sized {
 
     /// Get the text associated with this window. This can either be the title bar or
     /// the text contained within.
-    fn text(&self) -> &str;
+    fn text(&mut self) -> &mut str;
 
     /// Set the text associated with this window.
-    fn set_text(&mut self, txt: String) -> String;
+    fn set_text(&mut self, txt: String) -> crate::Result<String>;
+
+    /// Get the texture used for the background of this window.
+    fn background(&mut self) -> Option<&mut Texture>;
+
+    /// Set the texture used for the background of this window.
+    fn set_background(&mut self, texture: Option<Texture>);
+
+    /// Take the background.
+    fn take_background(&mut self) -> Option<Texture>;
+
+    /// Get the bounds of this window.
+    fn bounds(&self) -> Rect<u32>;
+
+    /// Set the bounds of this window.
+    fn set_bounds(&mut self, bounds: Rect<u32>, backend: bool) -> crate::Result<Rect<u32>>;
+
+    /// Tell if the window is a top-level window (read: closing it means the whole application should be closed)
+    fn is_top_level(&self) -> bool;
+
+    /// Display the window.
+    fn show(&self) -> crate::Result<()>;
+
+    /// Repaint the window.
+    fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()>;
 }
-
-impl Hash for WindowInternal {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state);
-    }
-}
-
-impl PartialEq for WindowInternal {
-    fn eq(&self, other: &Self) -> bool {
-        self.id() == other.id()
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.id() != other.id()
-    }
-}
-
-impl Eq for WindowInternal {}
 
 /// The internal window
 pub type WindowInternal = _WindowInternal;
