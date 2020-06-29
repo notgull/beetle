@@ -11,8 +11,8 @@ euclid = "0.20"
 image = "0.23"
 lazy_static = "1"
 log = "0.4"
-parking_lot = { version = "0.10", features = ["nightly"] }
-smallvec = { version = "1.4", features = ["union"] }
+parking_lot = "0.10" 
+smallvec = "1.4"
 thiserror = "1"
 
 [dev-dependencies]

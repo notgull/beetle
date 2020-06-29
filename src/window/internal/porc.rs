@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/instance/porc.rs
+ * src/window/internal/porc.rs
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,61 +43,233 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{super::Window, unique_id, GenericWindowInternal};
-use crate::{Event, EventType, Instance, Texture};
+use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
+use crate::{take_vec::TakeVec, Event, EventType, Instance, Texture};
 use euclid::default::Rect;
 use porcupine::{
-    ExtendedWindowStyle, OwnedWindowClass, WString, Window as PWindow, WindowClass, WindowStyle,
+    CmdShow, ExtendedWindowStyle, OwnedWindowClass, Window as PWindow, WindowClass, WindowStyle,
 };
-use std::{boxed::Box, os::raw::c_int};
+use std::{any::Any, boxed::Box, convert::TryInto, mem, os::raw::c_int};
+
+// a window class that every instance of WindowInternal uses
+lazy_static::lazy_static! {
+    static ref BEETLE_WINDOW_CLASS: OwnedWindowClass = beetle_window_class()
+        .unwrap_or_else(|e| panic!("Unable to create basic Beetle window class: {}", e));
+}
+
+fn beetle_window_class() -> crate::Result<OwnedWindowClass> {
+    let wc_name = "NotASeagullBeetleWindow".to_string(); // should be unique enough
+    let mut wc = OwnedWindowClass::new(wc_name);
+    wc.set_window_proc(Some(crate::wndproc::beetle_wndproc));
+    wc.register()?;
+    Ok(wc)
+}
+
+impl WindowClass for BEETLE_WINDOW_CLASS {
+    fn identifier(&self) -> &str {
+        OwnedWindowClass::identifier(self)
+    }
+}
 
 pub struct WindowInternal {
     id: usize,
     inner: PWindow,
-    event_handler: Option<Box<dyn Fn(Event) -> crate::Result<()>>>,
+    event_handler: Box<dyn EventHandler>,
     text: String,
-    texture: Option<Texture>,
+    background: Option<Texture>,
+    top_level: bool,
+    bounds: Rect<u32>,
+
+    // WM_SIZE does not automatically give us the old bounds of the window
+    // it makes sense to store them away when we receive the WM_SIZING event
+    old_bounds: TakeVec<Rect<u32>>,
 }
 
 impl GenericWindowInternal for WindowInternal {
+    #[inline]
     fn id(&self) -> usize {
         self.id
     }
 
     fn new(
-        instance: &Instance,
+        _instance: &Instance,
         parent: Option<&Window>,
-        class_name: String,
         text: String,
         bounds: Rect<u32>,
         background: Option<Texture>,
+        is_top_level: bool,
     ) -> crate::Result<Self> {
-        let wclass = WString::new(class_name)?;
-        let wtext = WString::new(&text)?;
+        let default_ws = WindowStyle::CLIP_CHILDREN
+            | WindowStyle::SYSMENU
+            | WindowStyle::SIZEBOX
+            | WindowStyle::MINIMIZE_BOX
+            | WindowStyle::CAPTION;
 
-        // if the window class isn't already registered, register it
-        let window_class: Box<dyn WindowClass> = match OwnedWindowClass::from_name(wtext) {
-            Ok(o) => Box::new(o),
-            Err((_e, w)) => Box::new(w), // TODO: create and register class
-        };
-
-        PWindow::new(
-            &window_class,
-            &wtext,
-            WindowStyle::CLIP_CHILDREN,
+        // create internal window
+        let mut pw = PWindow::new(
+            &BEETLE_WINDOW_CLASS,
+            &text,
+            default_ws,
             ExtendedWindowStyle::CLIENT_EDGE,
             euclid::rect(
                 bounds.origin.x.try_into()?,
                 bounds.origin.y.try_into()?,
-                bounds.size.width.try_into(),
+                bounds.size.width.try_into()?,
                 bounds.size.height.try_into()?,
             ),
-        )
+            parent.map(|p| p.inner_porc_window()).as_deref(),
+        )?;
+
+        Ok(Self {
+            inner: pw,
+            id: unique_id(),
+            event_handler: Box::new(super::default_event_handler),
+            text,
+            background,
+            top_level: is_top_level,
+            bounds,
+            old_bounds: TakeVec::new(),
+        })
+    }
+
+    #[inline]
+    fn receive_events(&mut self, _events: &[EventType]) -> crate::Result<()> {
+        // no-op
+        Ok(())
+    }
+
+    #[inline]
+    fn handle_event(&mut self, event: &Event) -> crate::Result<()> {
+        (self.event_handler())(event)?;
+
+        // also, make sure the Win32 part is handled properly
+        if let Some(eev) = event.take_extra_evdata() {
+            if let Ok(msg) = Box::<dyn Any + 'static>::downcast::<porcupine::MSG>(eev) {
+                self.handle_win32_msg(msg)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn event_handler(&self) -> &dyn EventHandler {
+        &self.event_handler
+    }
+
+    #[inline]
+    fn set_event_handler<F: EventHandler>(&mut self, evh: F) {
+        self.event_handler = Box::new(evh);
+    }
+
+    #[inline]
+    fn text(&mut self) -> &mut str {
+        &mut self.text
+    }
+
+    #[inline]
+    fn set_text(&mut self, txt: String) -> crate::Result<String> {
+        self.inner.set_text(&txt)?;
+
+        let mut res = txt;
+        mem::swap(&mut self.text, &mut res);
+        Ok(res)
+    }
+
+    #[inline]
+    fn background(&mut self) -> Option<&mut Texture> {
+        self.background.as_mut()
+    }
+
+    #[inline]
+    fn set_background(&mut self, bg: Option<Texture>) {
+        self.background = bg;
+    }
+
+    #[inline]
+    fn take_background(&mut self) -> Option<Texture> {
+        self.background.take()
+    }
+
+    #[inline]
+    fn bounds(&self) -> Rect<u32> {
+        self.bounds
+    }
+
+    #[inline]
+    fn set_bounds(&mut self, bounds: Rect<u32>, backend: bool) -> crate::Result<Rect<u32>> {
+        if backend {
+            self.inner.reshape(euclid::rect(
+                bounds.origin.x.try_into()?,
+                bounds.origin.y.try_into()?,
+                bounds.size.width.try_into()?,
+                bounds.size.height.try_into()?,
+            ))?;
+        }
+
+        let mut res = bounds;
+        mem::swap(&mut self.bounds, &mut res);
+        Ok(res)
+    }
+
+    #[inline]
+    fn is_top_level(&self) -> bool {
+        self.top_level
+    }
+
+    #[inline]
+    fn show(&self) -> crate::Result<()> {
+        self.inner.show(CmdShow::Show);
+        self.inner.update()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()> {
+        self.inner.invalidate(bounds.map(|b| {
+            euclid::rect(
+                b.origin.x as c_int,
+                b.origin.y as c_int,
+                b.size.width as c_int,
+                b.size.height as c_int,
+            )
+        }))?;
+        Ok(())
     }
 }
 
 impl WindowInternal {
-    pub(crate) fn inner_porc_window(&self) -> &PWindow {
-        &self.inner
+    #[inline]
+    pub(crate) fn inner_porc_window(&mut self) -> &mut PWindow {
+        &mut self.inner
+    }
+
+    #[inline]
+    pub(crate) fn set_user_data<T>(&mut self, obj: T) -> crate::Result<()> {
+        let boxed = Box::new(obj);
+        Ok(self.inner.set_user_data_box(boxed)?)
+    }
+
+    #[inline]
+    pub(crate) fn store_old_bounds(&mut self) {
+        self.old_bounds.push(self.bounds);
+    }
+
+    #[inline]
+    pub(crate) fn take_old_bounds(&mut self) -> Option<Rect<u32>> {
+        self.old_bounds.take()
+    }
+
+    #[inline]
+    fn handle_win32_msg(&mut self, msg: Box<porcupine::MSG>) -> crate::Result<()> {
+        use porcupine::winapi::um::winuser;
+
+        // if the type is WM_DESTROY and we are the top level, send the quit message
+        if msg.message == winuser::WM_DESTROY && self.is_top_level() {
+            unsafe { winuser::PostQuitMessage(0) };
+        }
+
+        porcupine::dispatch_message(&msg);
+        Ok(())
     }
 }

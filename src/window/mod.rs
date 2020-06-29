@@ -61,21 +61,20 @@ pub mod internal;
 pub use internal::EventHandler;
 pub use internal::*;
 
-lazy_static::lazy_static! {
-    // default events allowed
-    static ref DEFAULT_EVENTS: [EventType; 10] = [
-        EventType::AboutToPaint,
-        EventType::Paint,
-        EventType::TextChanging,
-        EventType::TextChanged,
-        EventType::Quit,
-        EventType::Close,
-        EventType::BoundsChanging,
-        EventType::BoundsChanged,
-        EventType::BackgroundChanging,
-        EventType::BackgroundChanged
-    ];
-}
+// event types that are allowed no matter what
+const DEFAULT_EVENTS: [EventType; 11] = [
+    EventType::NoOp,
+    EventType::AboutToPaint,
+    EventType::Paint,
+    EventType::TextChanging,
+    EventType::TextChanged,
+    EventType::Quit,
+    EventType::Close,
+    EventType::BoundsChanging,
+    EventType::BoundsChanged,
+    EventType::BackgroundChanging,
+    EventType::BackgroundChanged,
+];
 
 /// A rectangle of pixels on the screen, in the most basic terms. This structure is actually
 /// a cheaply copyable wrapper around the internal window object.
@@ -194,10 +193,10 @@ impl Window {
     #[inline]
     pub fn handle_event(&self, event: Event) -> crate::Result<()> {
         match event.ty() {
-            EventType::BoundsChanging => self.set_bounds_internal(
-                *event.new_size().unwrap(),
-                *Arc::downcast(event.arguments()[2].clone()).unwrap(),
-            )?,
+            EventType::BoundsChanging => {
+                let bools: (bool, bool) = *Arc::downcast(event.arguments()[2].clone()).unwrap();
+                self.set_bounds_internal(*event.new_bounds().unwrap(), bools.0, bools.1)?
+            }
             EventType::TextChanging => {
                 self.set_text_internal((*event.new_text().unwrap()).clone())?
             }
@@ -224,8 +223,13 @@ impl Window {
     /// Does this window receive this event type?
     #[inline]
     pub fn receives_event(&self, event_type: &EventType) -> bool {
+        // don't bother locking the mutex if the default events already contains the type
+        if DEFAULT_EVENTS.contains(event_type) {
+            return true;
+        }
+
         let he = self.handled_events.lock();
-        DEFAULT_EVENTS.contains(event_type) || he.contains(event_type)
+        he.contains(event_type)
     }
 
     /// Get the ID associated with this window.
@@ -246,28 +250,42 @@ impl Window {
         self.inner.lock().bounds()
     }
 
-    fn set_bounds_internal(&self, bounds: Rect<u32>, backend: bool) -> crate::Result<()> {
+    fn set_bounds_internal(
+        &self,
+        bounds: Rect<u32>,
+        backend: bool,
+        enqueue: bool,
+    ) -> crate::Result<()> {
         let mut l = self.inner.lock();
 
-        self.instance.queue_event(Event::new(
-            self,
-            EventType::BoundsChanged,
-            vec![Arc::new(l.set_bounds(bounds, backend)?), Arc::new(bounds)],
-        ));
+        let old_bounds = l.set_bounds(bounds, backend)?;
+
+        if enqueue {
+            self.instance.queue_event(Event::new(
+                self,
+                EventType::BoundsChanged,
+                vec![Arc::new(old_bounds), Arc::new(bounds)],
+            ));
+        }
         Ok(())
     }
 
     /// Set the bounds of the window.
     #[inline]
     pub fn set_bounds(&self, bounds: Rect<u32>) -> crate::Result<()> {
-        // this should just send a BoundsChaning event through, since that calls
+        // this should just send a BoundsChanging event through, since that calls
         // set_bounds_internal when dispatched
         let l = self.inner.lock();
         self.instance.queue_event(Event::new(
             self,
             EventType::BoundsChanging,
-            // Note: The Arc(true) at the end tells the evet
-            vec![Arc::new(l.bounds()), Arc::new(bounds), Arc::new(true)],
+            // Note: The Arc((true, true)) at the end tells the event handler to both
+            // set this on the X11 backend and release a BoundsChanged event
+            vec![
+                Arc::new(l.bounds()),
+                Arc::new(bounds),
+                Arc::new((true, true)),
+            ],
         ));
         Ok(())
     }
@@ -296,5 +314,24 @@ impl Window {
     #[inline]
     pub(crate) fn ic(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::InputContext> {
         ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.ic())
+    }
+}
+
+#[cfg(windows)]
+impl Window {
+    /// The inner Porcupine window.
+    #[inline]
+    pub(crate) fn inner_porc_window(&self) -> ReadOnlyMappedMutexGuard<'_, porcupine::Window> {
+        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_porc_window())
+    }
+
+    #[inline]
+    pub(crate) fn store_old_bounds(&self) {
+        self.inner.lock().store_old_bounds()
+    }
+
+    #[inline]
+    pub(crate) fn take_old_bounds(&self) -> Option<Rect<u32>> {
+        self.inner.lock().take_old_bounds()
     }
 }

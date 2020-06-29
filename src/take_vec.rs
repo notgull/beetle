@@ -1,5 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * examples/hello_world.rs - Basic opening of a window.
+ * src/take_vec.rs - A container that holds an item and the number of times it can be
+ *                   "taken" out of the container.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,53 +44,86 @@
  * ----------------------------------------------------------------------------------
  */
 
-use beetle::{EventType, Instance, Result};
-use euclid::rect;
+use std::{fmt, mem};
 
-fn main() -> Result<()> {
-    env_logger::init();
+/// A container, where every item is identical, and a certain number of items can be
+/// "taken" from it.
+pub struct TakeVec<T: Clone> {
+    value: Option<T>,
+    capacity: usize,
+}
 
-    let instance = Instance::new()?;
-    let window = instance.create_window(
-        None,
-        "Hello world!".to_string(),
-        rect(0, 0, 400, 200),
-        None,
-        true,
-    )?;
+impl<T: fmt::Debug + Clone> fmt::Debug for TakeVec<T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TakeVec")
+            .field("value", &self.value)
+            .field("capacity", &self.capacity)
+            .finish()
+    }
+}
 
-    window.receive_events(&[EventType::MouseButtonDown, EventType::KeyDown])?;
-    window.show()?; 
-
-    'evloop: loop {
-        let event = instance.next_event()?;
-
-        // do something if this is a mouse event
-        match event.ty() {
-            EventType::Paint => println!("Repainting window."),
-            EventType::MouseButtonDown => {
-                let coords = event.click_location().unwrap();
-                println!("Mouse click at ({}, {})", coords.x, coords.y);
-            }
-            EventType::KeyDown => {
-                let key = event.key().unwrap();
-                println!("Key Information: {:?}", key);
-            }
-            EventType::BoundsChanged => {
-                let bounds = event.new_bounds().unwrap();
-                 println!("Bounds changed to: {}", bounds);
-            }
-            _ => ()
-        }
-
-        // if this is a quit event, end the event loop
-        // otherwise, dispatch it to its intended target
-        if event.is_exit_event() {
-            break 'evloop;
-        } else {
-            event.dispatch()?;
+impl<T: Clone> TakeVec<T> {
+    /// Create a new, empty TakeVec.
+    #[inline]
+    pub fn new() -> Self {
+        TakeVec {
+            value: None,
+            capacity: 0,
         }
     }
 
-    Ok(())
+    /// Put an item into this TakeVec. It will return the previous item stored in this TakeVec.
+    #[inline]
+    pub fn push(&mut self, item: T) -> Option<T> {
+        let mut value = Some(item);
+        mem::swap(&mut self.value, &mut value);
+        self.increment();
+        value
+    }
+
+    /// Increment the counter on this TakeVec without replacing the value.
+    #[inline]
+    pub fn increment(&mut self) {
+        self.capacity += 1;
+    }
+
+    /// Take an item out of this TakeVec. If the capacity after the operation is greater than 0,
+    /// it will return a clone of the item instead.
+    #[inline]
+    pub fn take(&mut self) -> Option<T> {
+        match self.capacity {
+            0 => None,
+            1 => {
+                self.capacity = 0;
+                self.value.take()
+            }
+            _ => {
+                self.capacity -= 1;
+                self.value.clone()
+            }
+        }
+    }
+
+    /// Tell if this container is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        debug_assert!(self.value.is_none() && self.capacity == 0);
+        self.value.is_none()
+    }
+
+    /// If the container is empty, add a new value. Otherwise, increment
+    /// the capacity by one.
+    #[inline]
+    pub fn store(&mut self, value: T) {
+        if self.value.is_none() {
+            self.value = Some(value);
+            self.capacity = 1;
+        } else {
+            self.capacity += 1;
+            // TODO: it might be prudent to make sure "value" isn't dropped here
+            //       since this is only used internally with euclid values it
+            //       shouldn't be an issue
+        }
+    }
 }

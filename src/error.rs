@@ -59,6 +59,9 @@ pub enum Error {
     #[cfg(target_os = "linux")]
     #[error("{0}")]
     Flutter(#[from] FlutterbugError),
+    #[cfg(windows)]
+    #[error("{0}")]
+    Porc(#[from] PorcupineError),
     #[error("{0}")]
     TryFromInt(#[from] TryFromIntError),
 

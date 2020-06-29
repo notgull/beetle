@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - Root of the Beetle library.
- * porcupine - Safe wrapper around the graphical parts of Win32.
+ * src/wndproc.rs - The window procedure used for Beetle widgets.
+ * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,30 +43,35 @@
  * ----------------------------------------------------------------------------------
  */
 
-#![feature(trait_alias)]
+#![cfg(windows)]
 
-//#![cfg_attr(target_os = "linux", feature("flutterbug"))]
-//#![cfg_attr(windows, feature("porcupine"))]
-pub mod color;
-pub mod error;
-pub mod event;
-pub mod instance;
-pub mod keyboard;
-pub mod mouse;
-pub mod ro_mmg;
-pub(crate) mod take_vec;
-pub mod texture;
-pub mod window;
-pub(crate) mod wndproc;
+use porcupine::winapi::{
+    shared::{
+        minwindef::{LPARAM, LRESULT, UINT, WPARAM},
+        windef::HWND,
+    },
+    um::winuser::*,
+};
 
-pub use color::*;
-pub use error::*;
-pub use event::*;
-pub use instance::*;
-pub use keyboard::*;
-pub use mouse::*;
-pub use ro_mmg::*;
-pub use texture::*;
-pub use window::*;
+pub unsafe extern "system" fn beetle_wndproc(
+    hwnd: HWND,
+    msg: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_CLOSE => {
+            DestroyWindow(hwnd);
+        }
+        WM_DESTROY => {
+            // quitting message is taken care of in WindowInternal::handle_win32_msg, since we can detect
+            // if the window is top level there
+        }
+        _ => {
+            return DefWindowProcA(hwnd, msg, wparam, lparam);
+        }
+    }
 
-pub mod prelude {}
+    // if nothing else, just return 0
+    0
+}

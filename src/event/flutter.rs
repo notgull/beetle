@@ -44,7 +44,7 @@
  */
 
 use super::{Event, EventType};
-use crate::{Instance, KeyInfo, KeyType, MouseButton};
+use crate::{Instance, KeyInfo, KeyType, MouseButton, Window};
 use euclid::default::Point2D;
 use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};
 use smallvec::SmallVec;
@@ -57,8 +57,8 @@ impl Event {
         // TODO: this can probably be a TinyVec, if we want to go that route
         let mut evs = SmallVec::new();
         let ty = fev.kind();
-        let assoc_window = match instance.flutterbug_get_window(fev.window()) {
-            Some(w) => w,
+        let assoc_window: Window = match instance.flutterbug_get_window(fev.window()) {
+            Some(w) => (*w).clone(),
             None => {
                 // we don't care about this event, just return nothing
                 log::warn!("Found event without a corresponding window: {:?}", fev);
@@ -97,11 +97,12 @@ impl Event {
                 fn_key_info(&mut ki, &k, FunctionKeys::SHIFT, |k| k.set_shift(true));
 
                 // key press mouse location
-                let loc: Option<Point2D<u32>> = if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
-                    Some(Point2D::new(x, y))
-                } else {
-                    None
-                };
+                let loc: Option<Point2D<u32>> =
+                    if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
+                        Some(Point2D::new(x, y))
+                    } else {
+                        None
+                    };
 
                 evs.push(Event::new(
                     &assoc_window,
@@ -121,14 +122,19 @@ impl Event {
                     euclid::rect(e.x().try_into()?, e.y().try_into()?, e.width(), e.height());
 
                 if old_bounds != new_bounds {
-                    // Note: The Arc(false) at the end tells the event handler that
+                    // Note: The Arc((false, true)) at the end tells the event handler that
                     // this event was emitted by the event loop and not from the
                     // set_bounds function. It signals that the bounds change should
-                    // not be forwarded to the X11 backend.
+                    // not be forwarded to the X11 backend. The "true" is to tell the
+                    // handler to enqueue the BoundsChanged event.
                     evs.push(Event::new(
                         &assoc_window,
                         EventType::BoundsChanging,
-                        vec![Arc::new(old_bounds), Arc::new(new_bounds), Arc::new(false)],
+                        vec![
+                            Arc::new(old_bounds),
+                            Arc::new(new_bounds),
+                            Arc::new((false, true)),
+                        ],
                     ));
                 }
 
@@ -140,19 +146,30 @@ impl Event {
             FEvent::Button(b) => {
                 use flutterbug::x11::xlib::{Button1, Button2, Button3, Button4, Button5};
                 if let (Ok(x), Ok(y)) = (b.x().try_into(), b.y().try_into()) {
-                    evs.push(Event::new(&assoc_window, match b.kind() {
-                        FEventType::ButtonPress => EventType::MouseButtonDown,
-                        FEventType::ButtonRelease => EventType::MouseButtonUp,
-                        _ => unreachable!(),
-                    // First element is the X/Y coordinates. Second is the mouse button pressed.
-                    }, vec![Arc::new(Point2D::<u32>::new(x, y)), Arc::new(match b.button() {
-                        Button1 => MouseButton::Button1,
-                        Button2 => MouseButton::Button2,
-                        Button3 => MouseButton::Button3,
-                        Button4 => MouseButton::Button4,
-                        Button5 => MouseButton::Button5,
-                        _ => return Err(crate::Error::StaticMsg("Unexpected X11 mouse input")),
-                    })]));
+                    evs.push(Event::new(
+                        &assoc_window,
+                        match b.kind() {
+                            FEventType::ButtonPress => EventType::MouseButtonDown,
+                            FEventType::ButtonRelease => EventType::MouseButtonUp,
+                            _ => unreachable!(),
+                            // First element is the X/Y coordinates. Second is the mouse button pressed.
+                        },
+                        vec![
+                            Arc::new(Point2D::<u32>::new(x, y)),
+                            Arc::new(match b.button() {
+                                Button1 => MouseButton::Button1,
+                                Button2 => MouseButton::Button2,
+                                Button3 => MouseButton::Button3,
+                                Button4 => MouseButton::Button4,
+                                Button5 => MouseButton::Button5,
+                                _ => {
+                                    return Err(crate::Error::StaticMsg(
+                                        "Unexpected X11 mouse input",
+                                    ))
+                                }
+                            }),
+                        ],
+                    ));
                 }
             }
             // Special client messages

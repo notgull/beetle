@@ -88,7 +88,7 @@ impl GenericWindowInternal for WindowInternal {
         let dpy = instance.display();
         let inner = dpy.create_simple_window(
             parent.map(|p| p.inner_flutter_window()).as_deref(),
-            Point2D::new(bounds.origin.x as i32, bounds.origin.y as i32),
+            Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
             bounds.size,
             1,
             dpy.default_white_pixel()?,

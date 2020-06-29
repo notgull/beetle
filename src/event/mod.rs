@@ -45,6 +45,7 @@
 
 use crate::{KeyInfo, MouseButton, Window};
 use euclid::default::{Point2D, Rect};
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use std::{any::Any, fmt, sync::Arc};
 
 #[cfg(target_os = "linux")]
@@ -55,6 +56,8 @@ mod porc;
 /// Types of events deployed from Beetle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum EventType {
+    /// Nothing is happening. Often used as a transport for event data.
+    NoOp,
     /// A key has been pressed.
     KeyDown,
     /// A key has been released.
@@ -95,6 +98,7 @@ pub struct Event {
     ty: EventType,
     arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
     needs_quit: bool,
+    extra_evdata: Mutex<Option<Box<dyn Any + 'static>>>,
 }
 
 impl fmt::Debug for Event {
@@ -103,7 +107,6 @@ impl fmt::Debug for Event {
             .field("target_window", &self.target_window)
             .field("ty", &self.ty)
             .field("needs_quit", &self.needs_quit)
-            .field("arguments", &"Unable to Process".to_string())
             .finish()
     }
 }
@@ -121,7 +124,22 @@ impl Event {
             ty,
             arguments,
             needs_quit: false,
+            extra_evdata: Mutex::new(None),
         }
+    }
+
+    // on windows, the extra evdata is the MSG
+    // it would be counterproductive to expose this to the public API
+    #[inline]
+    pub(crate) fn set_extra_evdata(&self, data: Box<dyn Any + 'static>) {
+        let mut eev = self.extra_evdata.lock();
+        *eev = Some(data);
+    }
+
+    #[inline]
+    pub(crate) fn take_extra_evdata(&self) -> Option<Box<dyn Any + 'static>> {
+        let mut eev = self.extra_evdata.lock();
+        eev.take()
     }
 
     /// Get the type of the event.
@@ -170,13 +188,13 @@ impl Event {
 
     /// If this is a resize event, get the old size.
     #[inline]
-    pub fn old_size(&self) -> Option<Arc<Rect<u32>>> {
+    pub fn old_bounds(&self) -> Option<Arc<Rect<u32>>> {
         self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 0)
     }
 
     /// If this is a resize event, get the new size.
     #[inline]
-    pub fn new_size(&self) -> Option<Arc<Rect<u32>>> {
+    pub fn new_bounds(&self) -> Option<Arc<Rect<u32>>> {
         self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 1)
     }
 

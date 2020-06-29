@@ -43,12 +43,13 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Event, GenericWindowInternal, Texture, Window};
+use crate::{Event, EventType, GenericWindowInternal, Texture, Window};
 use euclid::default::Rect;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use smallvec::SmallVec;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    mem,
     sync::Arc,
 };
 
@@ -63,10 +64,16 @@ struct InstanceInternal {
     atoms: [flutterbug::Atom; 1],
     #[cfg(target_os = "linux")]
     im: flutterbug::InputMethod,
+
+    #[cfg(windows)]
+    window_mappings: Mutex<HashMap<usize, Window>>,
 }
 
 /// An instance of the Beetle GUI window factory.
 pub struct Instance(Arc<InstanceInternal>);
+
+unsafe impl Send for Instance {}
+unsafe impl Sync for Instance {}
 
 impl Clone for Instance {
     #[inline]
@@ -82,6 +89,8 @@ impl Instance {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
                 Self::flutterbug_new()
+            } else if #[cfg(windows)] {
+                Self::porcupine_new()
             } else {
                 unimplemented!()
             }
@@ -96,6 +105,8 @@ impl Instance {
             cfg_if::cfg_if! {
                 if #[cfg(target_os = "linux")] {
                     Event::from_flutter(this, flutterbug::Event::next(&this.0.connection)?)
+                } else if #[cfg(windows)] {
+                    this.porcupine_hold_for_events()
                 } else {
                     unimplemented!()
                 }
@@ -132,6 +143,8 @@ impl Instance {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
                 self.flutterbug_create_window(parent, text, bounds, background, is_top_level)
+            } else if #[cfg(windows)] {
+                self.porcupine_create_window(parent, text, bounds, background, is_top_level)
             } else {
                 unimplemented!()
             }
@@ -139,6 +152,7 @@ impl Instance {
     }
 }
 
+#[cfg(target_os = "linux")]
 const DELETE_WINDOW_ATOM: usize = 0;
 
 #[cfg(target_os = "linux")]
@@ -219,5 +233,91 @@ impl Instance {
         );
         self.flutterbug_add_window(ex_id, &w);
         Ok(w)
+    }
+}
+
+#[cfg(windows)]
+use porcupine::HWND;
+
+#[cfg(windows)]
+impl Instance {
+    #[inline]
+    pub fn porcupine_new() -> crate::Result<Instance> {
+        // win32 doesn't really have a connection object like X11 does
+        // however, we do well to initialize CommCtrl here
+        porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
+
+        Ok(Self(Arc::new(InstanceInternal {
+            event_queue: Mutex::new(VecDeque::new()),
+            window_mappings: Mutex::new(HashMap::new()),
+        })))
+    }
+
+    #[inline]
+    pub fn porcupine_add_window(&self, external_id: HWND, window: &Window) {
+        let hashable_index = external_id as usize;
+        let mut l = self.0.window_mappings.lock();
+        l.insert(hashable_index, window.clone());
+    }
+
+    #[inline]
+    pub fn porcupine_get_window(&self, external_id: HWND) -> Option<MappedMutexGuard<'_, Window>> {
+        let index = external_id as usize;
+        let l = self.0.window_mappings.lock();
+
+        // TODO: only one access, as above
+        match l.get(&index) {
+            None => None,
+            Some(_e) => Some(MutexGuard::map(l, move |i| i.get_mut(&index).unwrap())),
+        }
+    }
+
+    #[inline]
+    pub fn porcupine_create_window(
+        &self,
+        parent: Option<&Window>,
+        text: String,
+        bounds: Rect<u32>,
+        background: Option<Texture>,
+        is_top_level: bool,
+    ) -> crate::Result<Window> {
+        let mut cw =
+            crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
+        let id = cw.id();
+        let ex_id = cw.inner_porc_window().hwnd().as_ptr();
+
+        let w = Window::from_raw(
+            Arc::new(Mutex::new(cw)),
+            Arc::new(Mutex::new(HashSet::new())),
+            id,
+            self.clone(),
+            None,
+        );
+        self.porcupine_add_window(ex_id, &w);
+        Ok(w)
+    }
+
+    #[inline]
+    fn porcupine_hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>> {
+        use smallvec::smallvec;
+
+        // we'll just intercept the event from the event loop
+        // NOTE: fix this if it causes problems
+        if let Some(msg) = porcupine::get_message()? {
+            porcupine::translate_message(&msg);
+            Event::from_porc(self, msg)
+        } else {
+            // if get_message return None, we need to quit
+            // any window here should work
+            let wm = self.0.window_mappings.lock();
+            let any_window = wm
+                .iter()
+                .map(|(_k, v)| v)
+                .next()
+                .expect("Did not have any windows to assign a quit event to!");
+            let mut quit_ev = Event::new(any_window, EventType::Quit, vec![]);
+            quit_ev.set_is_exit_event(true);
+            Ok(smallvec![quit_ev])
+        }
     }
 }
