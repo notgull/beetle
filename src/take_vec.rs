@@ -44,6 +44,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+// this item is only used for the Win32 version of beetle
+#![cfg(windows)]
+
 use std::{fmt, mem};
 
 /// A container, where every item is identical, and a certain number of items can be
@@ -105,6 +108,10 @@ impl<T: Clone> TakeVec<T> {
         }
     }
 
+    /// Get the current capacity of the TakeVec.
+    #[inline]
+    pub fn capacity(&self) -> usize { self.capacity }
+
     /// Tell if this container is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -126,4 +133,35 @@ impl<T: Clone> TakeVec<T> {
             //       shouldn't be an issue
         }
     }
+}
+
+#[test]
+fn test_take_vec() {
+    use euclid::default::Rect;
+    let rect1 = euclid::rect(1,2,3,4);
+    let rect2 = euclid::rect(5,6,7,8);
+
+    let mut tv = TakeVec::new();
+    assert!(tv.is_empty());
+    
+    tv.push(rect1);
+    assert!(!tv.is_empty());
+    assert_eq!(tv.capacity(), 1);
+
+    tv.push(rect2);
+    assert_eq!(tv.capacity(), 2);
+    
+    tv.increment();
+    assert_eq!(tv.capacity(), 3); 
+
+    tv.store(rect1);
+    assert_eq!(tv.capacity(), 4);
+  
+    for i in 0..4 {
+        let r = tv.take().unwrap();
+        assert_eq!(r, rect2);
+    }
+
+    assert!(tv.is_empty());
+    assert!(tv.take().is_none());
 }
