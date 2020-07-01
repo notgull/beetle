@@ -131,7 +131,7 @@ impl<T: Clone> TakeVec<T> {
             self.capacity = 1;
         } else {
             self.capacity += 1;
-            // TODO: it might be prudent to make sure "value" isn't dropped here
+            // TODO: it might be prudent to make sure "value" isn't dropped here.
             //       since this is only used internally with euclid values it
             //       shouldn't be an issue
         }

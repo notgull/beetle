@@ -45,6 +45,9 @@
 
 //! Beetle is a GUI library that aims to use a pull-based event system, rather than the push-based
 //! event system that most modern GUI frameworks use.
+//!
+//! Beetle is built upon the idea that control over the event loop should belong to the programmer,
+//! rather than the framework.
 
 #![feature(trait_alias)]
 
