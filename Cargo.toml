@@ -3,6 +3,9 @@ name = "beetle"
 version = "0.0.1"
 authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
+license = "MIT/Apache-2.0"
+repository = "https://github.com/not-a-seagull/beetle"
+description = "Graphics framework with a pull-based event system"
 
 [dependencies]
 bitflags = "1.2"
@@ -11,6 +14,7 @@ euclid = "0.20"
 image = "0.23"
 lazy_static = "1"
 log = "0.4"
+# TODO: remove deadlock detector unless we need it
 parking_lot = { version = "0.10", features = ["nightly", "deadlock_detection"] }
 smallvec = "1.4"
 scopeguard = "1.1"
@@ -20,7 +24,11 @@ thiserror = "1"
 env_logger = "0.7"
 
 [target.'cfg(windows)'.dependencies]
-porcupine = { path = "../porcupine" }
+porcupine = { version = "0.1.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 flutterbug = { version = "0.1.1" }
+
+[badges]
+appveyor = { repository = "not-a-seagull/beetle", branch = "master", service = "github" }
+travis-ci = { repository = "not-a-seagull/beetle", branch = "master" }

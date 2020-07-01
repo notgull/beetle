@@ -284,24 +284,29 @@ impl Window {
             }
             EventType::AboutToPaint => self.repaint(None)?,
             EventType::MessageCarrier => {
-                // if any error occurs during this part, just drop it
-                match (
-                    Arc::downcast::<UINT>(event.arguments()[0].clone()),
-                    Arc::downcast::<WPARAM>(event.arguments()[1].clone()),
-                    Arc::downcast::<LPARAM>(event.arguments()[2].clone()),
-                ) {
-                    (Ok(m), Ok(w), Ok(l)) => unsafe {
-                        // in order to avoid a deadlock, we copy out the pointer
-                        let hwnd = self.inner_porc_window().hwnd().as_ptr();
+                // if this is win32, forward the message to the actual window
+                cfg_if::cfg_if! {
+                    if #[cfg(windows)] {
+                        // if any error occurs during this part, just drop it
+                        match (
+                            Arc::downcast::<UINT>(event.arguments()[0].clone()),
+                            Arc::downcast::<WPARAM>(event.arguments()[1].clone()),
+                            Arc::downcast::<LPARAM>(event.arguments()[2].clone()),
+                        ) {
+                            (Ok(m), Ok(w), Ok(l)) => unsafe {
+                                // in order to avoid a deadlock, we copy out the pointer
+                                let hwnd = self.inner_porc_window().hwnd().as_ptr();
 
-                        winuser::DefWindowProcA(
-                            hwnd,
-                            *m,
-                            *w,
-                            *l,
-                        );
-                    },
-                    _ => (),
+                                winuser::DefWindowProcA(
+                                    hwnd,
+                                    *m,
+                                    *w,
+                                    *l,
+                                );
+                            },
+                            _ => (),
+                        }
+                    }
                 }
             }
 
