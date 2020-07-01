@@ -77,13 +77,12 @@ use std::ops::Deref;
 ///     }
 /// }
 ///
-/// fn main() {
-///     let f = Foobar { foo: "Hello world!".to_string() };
-///     let fw = FoobarWrapper { inner: Mutex::new(f) };
+///
+/// let f = Foobar { foo: "Hello world!".to_string() };
+/// let fw = FoobarWrapper { inner: Mutex::new(f) };
 ///     
-///     let the_foo = String::from(*fw.get_foo());
-///     assert_eq!(the_foo, String::from("Hello world!"));
-/// }
+/// let the_foo = String::from(*fw.get_foo());
+/// assert_eq!(the_foo, String::from("Hello world!"));
 /// ```
 pub struct ReadOnlyMappedMutexGuard<'a, T: ?Sized>(MappedMutexGuard<'a, T>);
 

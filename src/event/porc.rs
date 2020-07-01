@@ -47,40 +47,42 @@ use super::{Event, EventType};
 use crate::{Instance, KeyInfo, KeyType, Window};
 use euclid::default::{Point2D, Rect, Size2D};
 use porcupine::{
+    prelude::*,
     winapi::{
         shared::{
-            minwindef::{DWORD, HIWORD, LOWORD, LPARAM},
-            windef::LPRECT,
+            minwindef::{DWORD, HIWORD, LOWORD, LPARAM, UINT, WPARAM},
+            windef::{HWND, LPRECT},
         },
         um::winuser::*,
     },
-    MSG,
 };
 use smallvec::SmallVec;
-use std::{boxed::Box, convert::TryInto, mem, os::raw::c_int, ptr, sync::Arc};
+use std::{
+    boxed::Box,
+    convert::TryInto,
+    mem,
+    os::raw::c_int,
+    ptr,
+    sync::{atomic::AtomicPtr, Arc},
+};
 
 const OLD_BOUNDS_NOT_FOUND: &'static str = "Old bounds were not stored in the window object.";
 
 impl Event {
-    pub(crate) fn from_porc(instance: &Instance, msg: MSG) -> crate::Result<SmallVec<[Event; 2]>> {
-        let mut evs = SmallVec::new();
+    pub(crate) fn from_porc(
+        instance: &Instance,
+        assoc_window: Window,
+        msg: UINT,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> crate::Result<SmallVec<[Event; 2]>> {
+        let mut evs: SmallVec<[Event; 2]> = SmallVec::new();
 
-        // get the window associated with this message
-        let assoc_window: Window = match instance.porcupine_get_window(msg.hwnd) {
-            Some(w) => (*w).clone(),
-            None => {
-                log::warn!(
-                    "Found message without a corresponding window: {}",
-                    msg.message
-                );
-                return Ok(evs);
-            }
-        };
+        log::debug!("Received windows message: {}", msg);
 
         #[inline]
-        fn get_newbounds(msg: &MSG) -> crate::Result<Rect<u32>> {
-            let new_winpos: LPWINDOWPOS =
-                unsafe { mem::transmute::<LPARAM, LPWINDOWPOS>(msg.lParam) };
+        fn get_newbounds(lp: LPARAM) -> crate::Result<Rect<u32>> {
+            let new_winpos: LPWINDOWPOS = unsafe { mem::transmute::<LPARAM, LPWINDOWPOS>(lp) };
             let new_wp: WINDOWPOS = unsafe { ptr::read(new_winpos) };
 
             let new_bounds: Rect<u32> = euclid::rect(
@@ -89,19 +91,23 @@ impl Event {
                 new_wp.cx.try_into()?,
                 new_wp.cy.try_into()?,
             );
+
             Ok(new_bounds)
         }
 
-        match msg.message {
+        match msg {
             WM_CLOSE => {
+                log::debug!("Found WM_CLOSE message");
                 evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
             }
             WM_PAINT => {
+                log::debug!("Found WM_PAINT message");
                 evs.push(Event::new(&assoc_window, EventType::Paint, vec![]));
             }
             // for all intents and purposes these are the same thing
             WM_KEYUP | WM_SYSKEYUP | WM_KEYDOWN | WM_SYSKEYDOWN => {
-                let key_stroke = msg.wParam;
+                log::debug!("Found keyboard-related message");
+                let key_stroke = wparam;
                 let mut ki = KeyInfo::new(KeyType::from_vk(key_stroke));
 
                 // set key information
@@ -137,7 +143,7 @@ impl Event {
 
                 evs.push(Event::new(
                     &assoc_window,
-                    match msg.message {
+                    match msg {
                         WM_KEYUP | WM_SYSKEYUP => EventType::KeyUp,
                         WM_KEYDOWN | WM_SYSKEYDOWN => EventType::KeyDown,
                         _ => unreachable!(),
@@ -146,7 +152,7 @@ impl Event {
                 ));
             }
             WM_WINDOWPOSCHANGING => {
-                let new_bounds = get_newbounds(&msg)?;
+                let new_bounds = get_newbounds(lparam)?;
                 let old_bounds = assoc_window.bounds();
 
                 // make sure to store the bounds
@@ -165,7 +171,8 @@ impl Event {
                 ));
             }
             WM_WINDOWPOSCHANGED => {
-                let new_bounds: Rect<u32> = get_newbounds(&msg)?;
+                log::debug!("Found WM_WINDOWPOSCHANGED");
+                let new_bounds: Rect<u32> = get_newbounds(lparam)?;
                 let old_bounds = match assoc_window.take_old_bounds() {
                     Some(ob) => ob,
                     None => {
@@ -181,67 +188,19 @@ impl Event {
                     vec![Arc::new(old_bounds), Arc::new(new_bounds)],
                 ));
             }
-            /*WM_SIZING => {
-                let old_bounds = assoc_window.bounds();
-
-                // the lParam should transmute to a pointer to a RECT
-                let winrect_ptr = unsafe { mem::transmute::<LPARAM, LPRECT>(msg.lParam) };
-                let winrect = unsafe { ptr::read(winrect_ptr) };
-                let new_bounds: Rect<u32> = Rect::new(
-                    old_bounds.origin,
-                    Size2D::new(
-                        (winrect.right - winrect.left).try_into()?,
-                        (winrect.bottom - winrect.top).try_into()?,
-                    ),
-                );
-
-                assoc_window.store_old_bounds();
-
-                evs.push(Event::new(
-                    &assoc_window,
-                    EventType::BoundsChanging,
-                    vec![
-                        Arc::new(old_bounds),
-                        Arc::new(new_bounds),
-                        Arc::new((false, false)),
-                    ],
-                ));
+            _ => {
+                log::debug!("Unsupported message.");
             }
-            WM_SIZE => {
-                // old bounds should be contained within the assoc window
-                let old_bounds = match assoc_window.take_old_bounds() {
-                    Some(ob) => ob,
-                    None => {
-                        log::error!("{}", OLD_BOUNDS_NOT_FOUND);
-                        assoc_window.bounds()
-                    }
-                };
-
-                let size_storage: DWORD = msg.lParam as DWORD;
-                let width = LOWORD(size_storage);
-                let height = HIWORD(size_storage);
-                let new_bounds: Rect<u32> =
-                    Rect::new(old_bounds.origin, Size2D::new(width.into(), height.into()));
-
-                evs.push(Event::new(
-                    &assoc_window,
-                    EventType::BoundsChanged,
-                    vec![Arc::new(old_bounds), Arc::new(new_bounds)],
-                ));
-            }*/
-            _ => { /* todo: support more events */ }
         }
 
-        // if we have an event, set the last one to hold the extra event data
-        let msg = Box::new(msg);
-        if !evs.is_empty() {
-            evs.iter_mut().last().unwrap().set_extra_evdata(msg);
-        } else {
-            // otherwise, add an event that does that
-            let mut carrier_ev = Event::new(&assoc_window, EventType::NoOp, vec![]);
-            carrier_ev.set_extra_evdata(msg);
-            evs.push(carrier_ev);
-        }
+        // also push an event that "carries" the message
+        evs.push(Event::new(
+            &assoc_window,
+            EventType::MessageCarrier,
+            vec![Arc::new(msg), Arc::new(wparam), Arc::new(lparam)],
+        ));
+
+        log::debug!("Queueing events: {:?}", &evs);
 
         Ok(evs)
     }

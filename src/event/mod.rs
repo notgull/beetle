@@ -86,6 +86,8 @@ pub enum EventType {
     MouseButtonDown,
     /// The window has had a mouse button released on it.
     MouseButtonUp,
+    /// A carrier for a Win32 message.
+    MessageCarrier,
     /// A manual, integer event.
     Integer(usize),
     /// A manual, string event.
@@ -98,7 +100,6 @@ pub struct Event {
     ty: EventType,
     arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
     needs_quit: bool,
-    extra_evdata: Mutex<Option<Box<dyn Any + 'static>>>,
 }
 
 impl fmt::Debug for Event {
@@ -124,22 +125,7 @@ impl Event {
             ty,
             arguments,
             needs_quit: false,
-            extra_evdata: Mutex::new(None),
         }
-    }
-
-    // on windows, the extra evdata is the MSG
-    // it would be counterproductive to expose this to the public API
-    #[inline]
-    pub(crate) fn set_extra_evdata(&self, data: Box<dyn Any + 'static>) {
-        let mut eev = self.extra_evdata.lock();
-        *eev = Some(data);
-    }
-
-    #[inline]
-    pub(crate) fn take_extra_evdata(&self) -> Option<Box<dyn Any + 'static>> {
-        let mut eev = self.extra_evdata.lock();
-        eev.take()
     }
 
     /// Get the type of the event.

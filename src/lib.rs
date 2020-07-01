@@ -43,6 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+//! Beetle is a GUI library that aims to use a pull-based event system, rather than the push-based
+//! event system that most modern GUI frameworks use.
+
 #![feature(trait_alias)]
 
 //#![cfg_attr(target_os = "linux", feature("flutterbug"))]

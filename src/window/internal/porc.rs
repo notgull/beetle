@@ -47,9 +47,24 @@ use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
 use crate::{take_vec::TakeVec, Event, EventType, Instance, Texture};
 use euclid::default::Rect;
 use porcupine::{
+    prelude::*,
+    winapi::{
+        shared::{
+            minwindef::{LPARAM, UINT, WPARAM},
+            windef::HWND,
+        },
+        um::winuser,
+    },
     CmdShow, ExtendedWindowStyle, OwnedWindowClass, Window as PWindow, WindowClass, WindowStyle,
 };
-use std::{any::Any, boxed::Box, convert::TryInto, mem, os::raw::c_int};
+use std::{
+    any::Any,
+    boxed::Box,
+    convert::TryInto,
+    mem,
+    os::raw::c_int,
+    sync::{atomic::AtomicPtr, Arc},
+};
 
 // a window class that every instance of WindowInternal uses
 lazy_static::lazy_static! {
@@ -80,8 +95,7 @@ pub struct WindowInternal {
     top_level: bool,
     bounds: Rect<u32>,
 
-    // WM_SIZE does not automatically give us the old bounds of the window
-    // it makes sense to store them away when we receive the WM_SIZING event
+    // storage for old bounds for size change events
     old_bounds: TakeVec<Rect<u32>>,
 }
 
@@ -92,7 +106,7 @@ impl GenericWindowInternal for WindowInternal {
     }
 
     fn new(
-        _instance: &Instance,
+        instance: &Instance,
         parent: Option<&Window>,
         text: String,
         bounds: Rect<u32>,
@@ -106,7 +120,7 @@ impl GenericWindowInternal for WindowInternal {
             | WindowStyle::CAPTION;
 
         // create internal window
-        let mut pw = PWindow::new(
+        let mut pw = PWindow::with_creation_param(
             &BEETLE_WINDOW_CLASS,
             &text,
             default_ws,
@@ -118,6 +132,7 @@ impl GenericWindowInternal for WindowInternal {
                 bounds.size.height.try_into()?,
             ),
             parent.map(|p| p.inner_porc_window()).as_deref(),
+            Some(Box::new(instance.clone())),
         )?;
 
         Ok(Self {
@@ -135,20 +150,6 @@ impl GenericWindowInternal for WindowInternal {
     #[inline]
     fn receive_events(&mut self, _events: &[EventType]) -> crate::Result<()> {
         // no-op
-        Ok(())
-    }
-
-    #[inline]
-    fn handle_event(&mut self, event: &Event) -> crate::Result<()> {
-        (self.event_handler())(event)?;
-
-        // also, make sure the Win32 part is handled properly
-        if let Some(eev) = event.take_extra_evdata() {
-            if let Ok(msg) = Box::<dyn Any + 'static>::downcast::<porcupine::MSG>(eev) {
-                self.handle_win32_msg(msg)?;
-            }
-        }
-
         Ok(())
     }
 
@@ -219,9 +220,8 @@ impl GenericWindowInternal for WindowInternal {
 
     #[inline]
     fn show(&self) -> crate::Result<()> {
-        self.inner.show(CmdShow::Show);
-        self.inner.update()?;
-        Ok(())
+        // on win32, show() is handled by the Window object
+        unimplemented!()
     }
 
     #[inline]
@@ -258,18 +258,5 @@ impl WindowInternal {
     #[inline]
     pub(crate) fn take_old_bounds(&mut self) -> Option<Rect<u32>> {
         self.old_bounds.take()
-    }
-
-    #[inline]
-    fn handle_win32_msg(&mut self, msg: Box<porcupine::MSG>) -> crate::Result<()> {
-        use porcupine::winapi::um::winuser;
-
-        // if the type is WM_DESTROY and we are the top level, send the quit message
-        if msg.message == winuser::WM_DESTROY && self.is_top_level() {
-            unsafe { winuser::PostQuitMessage(0) };
-        }
-
-        porcupine::dispatch_message(&msg);
-        Ok(())
     }
 }

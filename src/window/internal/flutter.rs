@@ -185,7 +185,7 @@ impl GenericWindowInternal for WindowInternal {
             .map(|et| X11_EVENT_MAPPING.get(et))
             .filter(Option::is_some)
             .flat_map(|fetl| fetl.unwrap().iter())
-            .map(|fet| *fet)
+            .copied()
             .collect::<HashSet<EventMask>>();
 
         // exit early if the event set is empty
@@ -195,7 +195,7 @@ impl GenericWindowInternal for WindowInternal {
 
         let mut sum_event_mask = EventMask::EXPOSURE_MASK; // EXPOSURE_MASK is there no matter what
         for e in event_set {
-            sum_event_mask = sum_event_mask | e;
+            sum_event_mask |= e;
         }
 
         Ok(self.inner.select_input(sum_event_mask)?)

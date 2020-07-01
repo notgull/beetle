@@ -45,9 +45,36 @@
 
 use beetle::{EventType, Instance, Result};
 use euclid::rect;
+use std::{env, time::Duration, thread};
+
+// spawns a quick deadlock detector
+fn deadlock_detector() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(10));
+
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
+
+            println!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                println!("Deadlock #{}", i);
+                for t in threads {
+                    println!("Thread Id {:#?}", t.thread_id());
+                    println!("{:#?}", t.backtrace());
+                }
+            }
+        }
+    });
+}
 
 fn main() -> Result<()> {
+    env::set_var("RUST_LOG", "beetle=error");
     env_logger::init();
+
+    deadlock_detector();
 
     let instance = Instance::new()?;
     let window = instance.create_window(

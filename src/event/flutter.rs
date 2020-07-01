@@ -52,7 +52,10 @@ use std::{convert::TryInto, sync::Arc};
 
 impl Event {
     /// Translate a Flutterbug event to a Beetle event.
-    pub fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<SmallVec<[Self; 2]>> {
+    pub(crate) fn from_flutter(
+        instance: &Instance,
+        fev: FEvent,
+    ) -> crate::Result<SmallVec<[Self; 2]>> {
         // optimize for at least two events
         // TODO: this can probably be a TinyVec, if we want to go that route
         let mut evs = SmallVec::new();
@@ -85,7 +88,7 @@ impl Event {
                     key: FunctionKeys,
                     setter: F,
                 ) where
-                    F: FnOnce(&mut KeyInfo) -> (),
+                    F: FnOnce(&mut KeyInfo),
                 {
                     if k.has_function(key) {
                         setter(ki);

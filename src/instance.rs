@@ -46,8 +46,11 @@
 use crate::{Event, EventType, GenericWindowInternal, Texture, Window};
 use euclid::default::Rect;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+#[cfg(windows)]
+use porcupine::prelude::*;
 use smallvec::SmallVec;
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
     mem,
     sync::Arc,
@@ -66,10 +69,16 @@ struct InstanceInternal {
     im: flutterbug::InputMethod,
 
     #[cfg(windows)]
+    next_events: Mutex<Option<crate::Result<SmallVec<[Event; 2]>>>>,
+    #[cfg(windows)]
     window_mappings: Mutex<HashMap<usize, Window>>,
 }
 
 /// An instance of the Beetle GUI window factory.
+///
+/// The Instance object is used to abstract over the connection to the GUI server
+/// that is needed to create windows and widgets.
+#[repr(transparent)]
 pub struct Instance(Arc<InstanceInternal>);
 
 unsafe impl Send for Instance {}
@@ -118,7 +127,12 @@ impl Instance {
             hold_for_events(self)?
                 .into_iter()
                 .filter(|e| e.window().receives_event(&e.ty())) // filter out events the window can't receive
-                .for_each(|e| evq.push_back(e));
+                .try_for_each::<_, crate::Result<()>>(|e| {
+                    // make sure the pre-event is called
+                    e.window().prehandle_event(&e)?;
+                    evq.push_back(e);
+                    Ok(())
+                })?;
         }
         Ok(evq.pop_front().unwrap())
     }
@@ -161,7 +175,7 @@ use flutterbug::x11::xlib::Window as WindowID;
 #[cfg(target_os = "linux")]
 impl Instance {
     /// Create the flutterbug instance of the Beetle GUI factory.
-    pub fn flutterbug_new() -> crate::Result<Instance> {
+    fn flutterbug_new() -> crate::Result<Instance> {
         use flutterbug::{prelude::*, Display};
 
         let dpy = Display::new()?;
@@ -177,7 +191,7 @@ impl Instance {
 
     /// Add a window.
     #[inline]
-    pub fn flutterbug_add_window(&self, external_id: WindowID, window: &Window) {
+    fn flutterbug_add_window(&self, external_id: WindowID, window: &Window) {
         let mut l = self.0.window_mappings.lock();
         l.insert(external_id, window.clone());
     }
@@ -189,13 +203,16 @@ impl Instance {
     }
 
     #[inline]
-    pub fn im(&self) -> &flutterbug::InputMethod {
+    pub(crate) fn im(&self) -> &flutterbug::InputMethod {
         &self.0.im
     }
 
     /// Get a window from the window mappings.
     #[inline]
-    pub fn flutterbug_get_window(&self, ex_id: WindowID) -> Option<MappedMutexGuard<'_, Window>> {
+    pub(crate) fn flutterbug_get_window(
+        &self,
+        ex_id: WindowID,
+    ) -> Option<MappedMutexGuard<'_, Window>> {
         let l = self.0.window_mappings.lock();
 
         // TODO: streamline this so we only have to access once
@@ -206,12 +223,12 @@ impl Instance {
     }
 
     #[inline]
-    pub fn delete_window_atom(&self) -> flutterbug::Atom {
+    pub(crate) fn delete_window_atom(&self) -> flutterbug::Atom {
         self.0.atoms[DELETE_WINDOW_ATOM]
     }
 
     #[inline]
-    pub fn flutterbug_create_window(
+    fn flutterbug_create_window(
         &self,
         parent: Option<&Window>,
         text: String,
@@ -242,38 +259,20 @@ use porcupine::HWND;
 #[cfg(windows)]
 impl Instance {
     #[inline]
-    pub fn porcupine_new() -> crate::Result<Instance> {
+    fn porcupine_new() -> crate::Result<Instance> {
         // win32 doesn't really have a connection object like X11 does
         // however, we do well to initialize CommCtrl here
         porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
 
         Ok(Self(Arc::new(InstanceInternal {
             event_queue: Mutex::new(VecDeque::new()),
+            next_events: Mutex::new(None),
             window_mappings: Mutex::new(HashMap::new()),
         })))
     }
 
     #[inline]
-    pub fn porcupine_add_window(&self, external_id: HWND, window: &Window) {
-        let hashable_index = external_id as usize;
-        let mut l = self.0.window_mappings.lock();
-        l.insert(hashable_index, window.clone());
-    }
-
-    #[inline]
-    pub fn porcupine_get_window(&self, external_id: HWND) -> Option<MappedMutexGuard<'_, Window>> {
-        let index = external_id as usize;
-        let l = self.0.window_mappings.lock();
-
-        // TODO: only one access, as above
-        match l.get(&index) {
-            None => None,
-            Some(_e) => Some(MutexGuard::map(l, move |i| i.get_mut(&index).unwrap())),
-        }
-    }
-
-    #[inline]
-    pub fn porcupine_create_window(
+    fn porcupine_create_window(
         &self,
         parent: Option<&Window>,
         text: String,
@@ -284,7 +283,7 @@ impl Instance {
         let mut cw =
             crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
         let id = cw.id();
-        let ex_id = cw.inner_porc_window().hwnd().as_ptr();
+        let ex_id = cw.inner_porc_window().hwnd().as_ptr() as *const () as usize;
 
         let w = Window::from_raw(
             Arc::new(Mutex::new(cw)),
@@ -293,8 +292,21 @@ impl Instance {
             self.clone(),
             None,
         );
-        self.porcupine_add_window(ex_id, &w);
+
+        // add to window mappings
+        let mut wm = self.0.window_mappings.lock();
+        wm.insert(ex_id, w.clone());
         Ok(w)
+    }
+
+    #[inline]
+    pub(crate) fn porcupine_get_window(
+        &self,
+        hwnd: porcupine::winapi::shared::windef::HWND,
+    ) -> Option<Window> {
+        log::trace!("Accessing window by HWND {:p}", hwnd);
+        let wm = self.0.window_mappings.lock();
+        wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
     }
 
     #[inline]
@@ -305,7 +317,16 @@ impl Instance {
         // NOTE: fix this if it causes problems
         if let Some(msg) = porcupine::get_message()? {
             porcupine::translate_message(&msg);
-            Event::from_porc(self, msg)
+            porcupine::dispatch_message(&msg); // calls window proc
+
+            // the window procedure should set the value, read it
+            let mut next_events = self.0.next_events.lock();
+            match next_events.take() {
+                Some(r) => r,
+                None => Err(crate::Error::StaticMsg(
+                    "Unable to retrieve events from window procedure",
+                )),
+            }
         } else {
             // if get_message return None, we need to quit
             // any window here should work
@@ -314,10 +335,19 @@ impl Instance {
                 .iter()
                 .map(|(_k, v)| v)
                 .next()
-                .expect("Did not have any windows to assign a quit event to!");
+                .expect("Did not have a top level window to assign the quit event to");
             let mut quit_ev = Event::new(any_window, EventType::Quit, vec![]);
             quit_ev.set_is_exit_event(true);
             Ok(smallvec![quit_ev])
         }
+    }
+
+    #[inline]
+    pub(crate) fn porcupine_set_next_events(
+        &self,
+        next_events: crate::Result<SmallVec<[Event; 2]>>,
+    ) {
+        let mut l = self.0.next_events.lock();
+        *l = Some(next_events);
     }
 }

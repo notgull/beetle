@@ -46,23 +46,34 @@
 use crate::{Event, EventType, Instance, ReadOnlyMappedMutexGuard, Texture};
 use euclid::default::Rect;
 use parking_lot::Mutex;
+#[cfg(windows)]
+use porcupine::{
+    prelude::*,
+    winapi::{
+        shared::minwindef::{LPARAM, UINT, WPARAM},
+        um::winuser,
+    },
+};
+#[cfg(debug_assertions)]
+use scopeguard::defer;
 use std::{
     any::Any,
     collections::HashSet,
     fmt,
     hash::{Hash, Hasher},
+    mem,
     sync::Arc,
 };
 
 mod id;
 pub(crate) use id::*;
 
-pub mod internal;
+mod internal;
 pub use internal::EventHandler;
-pub use internal::*;
+pub(crate) use internal::*;
 
 // event types that are allowed no matter what
-const DEFAULT_EVENTS: [EventType; 11] = [
+const DEFAULT_EVENTS: [EventType; 12] = [
     EventType::NoOp,
     EventType::AboutToPaint,
     EventType::Paint,
@@ -74,6 +85,7 @@ const DEFAULT_EVENTS: [EventType; 11] = [
     EventType::BoundsChanged,
     EventType::BackgroundChanging,
     EventType::BackgroundChanged,
+    EventType::MessageCarrier,
 ];
 
 /// A rectangle of pixels on the screen, in the most basic terms. This structure is actually
@@ -86,6 +98,32 @@ const DEFAULT_EVENTS: [EventType; 11] = [
 /// the screen itself a Window.
 ///
 /// The Window object is created using the Instance object.
+///
+/// # Example
+///
+/// ```no_run
+/// use beetle::{Instance, Window};
+/// use euclid::rect;
+///
+/// # fn main() -> beetle::Result<()> {
+/// // a Window is created using Instance::create_window
+/// let instance = Instance::new()?;
+/// let my_window: Window = instance.create_window(
+///                             None, // parent
+///                             "Hello world!".to_string(), // associated text
+///                             rect(0, 0, 100, 100), // bounds
+///                             None, // background
+///                             true, // is top level
+///                         )?;
+///
+/// // if cloned, they will still refer to the same window
+/// let cloned_window = my_window.clone();
+/// // PartialEq and Eq are implemented for Window
+/// assert_eq!(my_window, cloned_window);
+///
+/// # Ok(())
+/// # }
+/// ```
 pub struct Window {
     inner: Arc<Mutex<WindowInternal>>,
     handled_events: Arc<Mutex<HashSet<EventType>>>,
@@ -109,12 +147,9 @@ impl Hash for Window {
 }
 
 impl PartialEq for Window {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.id() != other.id()
     }
 }
 
@@ -133,6 +168,12 @@ impl Clone for Window {
 }
 
 impl Window {
+    /// The instance used to handle events and create this window.
+    #[inline]
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
     /// Internal function to create a new Window.
     #[inline]
     pub(crate) fn from_raw(
@@ -152,15 +193,46 @@ impl Window {
     }
 
     /// Get the text associated with this window.
+    ///
+    /// This object will return a mutex guard containing the text associated with this window.
+    /// Most often, the meaning of the text is dependent on the context of the window. For
+    /// instance, a top level window will use its text as the title bar.
+    ///
+    /// This function returns a `ReadOnlyMappedMutexGuard`, which locks the mutex for the
+    /// internal window. If this is used in threaded code, the mutex guard should be
+    /// dropped ASAP after usage.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use beetle::Instance;
+    /// use euclid::rect;
+    ///
+    /// # fn main() -> beetle::Result<()> {
+    /// const TEST_TEXT: &'static str = "Test!";
+    /// let instance = Instance::new()?;
+    /// let w = instance.create_window(None, TEST_TEXT.into_string(), rect(0, 0, 200, 100), None, true)?;
+    ///
+    /// let txt = w.text().into_string();
+    /// assert_eq!(txt, TEST_TEXT.into_string());
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     pub fn text(&self) -> ReadOnlyMappedMutexGuard<'_, str> {
+        log::debug!("Providing mutex lock \"text\" from window id {}", self.id());
         ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.text())
     }
 
     /// Set the text associated with this window. This will emit a TextChanged event.
     #[inline]
     pub fn set_text(&self, text: String) -> crate::Result<()> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_text\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_text\""));
+
         self.instance.queue_event(Event::new(
             self,
             EventType::TextChanging,
@@ -170,7 +242,12 @@ impl Window {
     }
 
     fn set_text_internal(&self, text: String) -> crate::Result<()> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_text_internal\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_text_internal\""));
+
         let cloned_text = Arc::new(text.clone());
         self.instance.queue_event(Event::new(
             self,
@@ -185,7 +262,12 @@ impl Window {
     /// The Event Handler is a function run after normal event processing is done.
     #[inline]
     pub fn set_event_handler<F: EventHandler>(&self, evh: F) {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_event_handler\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_event_handler\""));
+
         l.set_event_handler(evh);
     }
 
@@ -201,11 +283,69 @@ impl Window {
                 self.set_text_internal((*event.new_text().unwrap()).clone())?
             }
             EventType::AboutToPaint => self.repaint(None)?,
+            EventType::MessageCarrier => {
+                // if any error occurs during this part, just drop it
+                match (
+                    Arc::downcast::<UINT>(event.arguments()[0].clone()),
+                    Arc::downcast::<WPARAM>(event.arguments()[1].clone()),
+                    Arc::downcast::<LPARAM>(event.arguments()[2].clone()),
+                ) {
+                    (Ok(m), Ok(w), Ok(l)) => unsafe {
+                        // in order to avoid a deadlock, we copy out the pointer
+                        let hwnd = self.inner_porc_window().hwnd().as_ptr();
+
+                        winuser::DefWindowProcA(
+                            hwnd,
+                            *m,
+                            *w,
+                            *l,
+                        );
+                    },
+                    _ => (),
+                }
+            }
+
             _ => { /* do nothing */ }
         }
 
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"handle_event\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"handle_event\""));
+
         l.handle_event(&event)
+    }
+
+    /// Handle an event before it gets sent into the event loop for the user.
+    #[inline]
+    pub fn prehandle_event(&self, event: &Event) -> crate::Result<()> {
+        match event.ty() {
+            EventType::Paint => {
+                if let Some(background) = self.background() {
+                    // TODO: paint texture for window
+                }
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Get the background for this window.
+    #[inline]
+    pub fn background(&self) -> Option<ReadOnlyMappedMutexGuard<'_, Texture>> {
+        log::debug!(
+            "Providing mutex lock \"background\" from window id {}",
+            self.id()
+        );
+        let mut l = self.inner.lock();
+        match l.background() {
+            Some(_) => Some(ReadOnlyMappedMutexGuard::from_guard(l, |i| {
+                i.background().unwrap()
+            })),
+            None => None,
+        }
     }
 
     /// Define which events should be handled by the window.
@@ -216,7 +356,12 @@ impl Window {
         he.clear();
         he.extend(event_types);
 
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"receive_events\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"receive_events\""));
+
         l.receive_events(event_types)
     }
 
@@ -241,12 +386,22 @@ impl Window {
     /// Tell if this window is a top-level window.
     #[inline]
     pub fn is_top_level(&self) -> bool {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"is_top_level\"");
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"is_top_level\""));
+
         self.inner.lock().is_top_level()
     }
 
     /// Get the bounds of this window.
     #[inline]
     pub fn bounds(&self) -> Rect<u32> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"bounds\"");
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"bounds\""));
+
         self.inner.lock().bounds()
     }
 
@@ -256,7 +411,11 @@ impl Window {
         backend: bool,
         enqueue: bool,
     ) -> crate::Result<()> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_bounds_internal\"");
         let mut l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_bounds_internal\""));
 
         let old_bounds = l.set_bounds(bounds, backend)?;
 
@@ -275,7 +434,12 @@ impl Window {
     pub fn set_bounds(&self, bounds: Rect<u32>) -> crate::Result<()> {
         // this should just send a BoundsChanging event through, since that calls
         // set_bounds_internal when dispatched
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_bounds\"");
         let l = self.inner.lock();
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_bounds\""));
+
         self.instance.queue_event(Event::new(
             self,
             EventType::BoundsChanging,
@@ -293,7 +457,31 @@ impl Window {
     /// Display the window.
     #[inline]
     pub fn show(&self) -> crate::Result<()> {
-        self.inner.lock().show()
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"show\"");
+
+        // Win32 Note: show() calls the window proc, which needs access to the mutex, which causes
+        // a deadlock. To circumvent this, we call show() and update() manually
+
+        cfg_if::cfg_if! {
+            if #[cfg(windows)] {
+                let mut l = self.inner.lock();
+                let weak = l.inner_porc_window().weak_reference();
+                mem::drop(l);
+                #[cfg(debug_assertions)]
+                log::trace!("Unlocked mutex for \"show\"");
+
+                // call show() and update()
+                weak.show(porcupine::CmdShow::Show);
+                weak.update()?;
+                Ok(())
+            } else {
+                #[cfg(debug_assertions)]
+                defer!(log::trace!("Unlocked mutex for \"show\""));
+
+                self.inner.lock().show()
+            }
+        }
     }
 
     /// Force a repaint operation on the window.
@@ -308,11 +496,16 @@ impl Window {
     /// The inner Flutterbug window.
     #[inline]
     pub(crate) fn inner_flutter_window(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::Window> {
+        log::debug!(
+            "Providing mutex lock \"inner_flutter_window\" from window id {}",
+            self.id()
+        );
         ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_flutter_window())
     }
 
     #[inline]
     pub(crate) fn ic(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::InputContext> {
+        log::debug!("Providing mutex lock \"ic\" from window id {}", self.id());
         ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.ic())
     }
 }
@@ -322,16 +515,40 @@ impl Window {
     /// The inner Porcupine window.
     #[inline]
     pub(crate) fn inner_porc_window(&self) -> ReadOnlyMappedMutexGuard<'_, porcupine::Window> {
+        log::debug!(
+            "Providing mutex lock \"inner_porc_window\" from window id {}",
+            self.id()
+        );
         ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_porc_window())
     }
 
     #[inline]
+    pub(crate) fn set_user_data<T>(&self, data: T) -> crate::Result<()> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"set_user_data\"");
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"set_user_data\""));
+
+        self.inner.lock().set_user_data(data)
+    }
+
+    #[inline]
     pub(crate) fn store_old_bounds(&self) {
-        self.inner.lock().store_old_bounds()
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"store_old_bounds\"");
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"store_old_bounds\""));
+
+        self.inner.lock().store_old_bounds();
     }
 
     #[inline]
     pub(crate) fn take_old_bounds(&self) -> Option<Rect<u32>> {
+        #[cfg(debug_assertions)]
+        log::trace!("Locked mutex for \"take_old_bounds\"");
+        #[cfg(debug_assertions)]
+        defer!(log::trace!("Unlocked mutex for \"take_old_bounds\""));
+
         self.inner.lock().take_old_bounds()
     }
 }
