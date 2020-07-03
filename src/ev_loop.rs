@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - Root of the Beetle library.
- * porcupine - Safe wrapper around the graphical parts of Win32.
+ * src/ev_loop.rs - Functions, traits, and enums for creating the event loop.
+ * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,38 +43,64 @@
  * ----------------------------------------------------------------------------------
  */
 
-//! Beetle is a GUI library that aims to use a pull-based event system, rather than the push-based
-//! event system that most modern GUI frameworks use.
-//!
-//! Beetle is built upon the idea that control over the event loop should belong to the programmer,
-//! rather than the framework.
+use crate::{Event, Instance};
+use std::{boxed::Box, error::Error as StdError};
 
-#![feature(trait_alias)]
+/// What to do next, after the current iteration of the event loop?
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum NextAction {
+    Continue,
+    Break,
+}
 
-//#![cfg_attr(target_os = "linux", feature("flutterbug"))]
-//#![cfg_attr(windows, feature("porcupine"))]
-pub mod color;
-pub mod error;
-pub mod ev_loop;
-pub mod event;
-pub mod instance;
-pub mod keyboard;
-pub mod mouse;
-pub mod ro_mmg;
-pub(crate) mod take_vec;
-pub mod texture;
-pub mod window;
-pub(crate) mod wndproc;
+/// The event loop that dictates the actions of the program.
+pub trait EventLoop {
+    /// Call the next iteration of the event loop, supplying the event that is currently being examined.
+    fn run_evloop(
+        &self,
+        instance: &Instance,
+        event: &Event,
+    ) -> Result<NextAction, Box<dyn StdError>>;
+}
 
-pub use color::*;
-pub use error::*;
-pub use ev_loop::*;
-pub use event::*;
-pub use instance::*;
-pub use keyboard::*;
-pub use mouse::*;
-pub use ro_mmg::*;
-pub use texture::*;
-pub use window::*;
+impl<T, E> EventLoop for T
+where
+    T: Fn(&Instance, &Event) -> Result<NextAction, E>,
+    E: Into<Box<dyn StdError>>,
+{
+    #[inline]
+    fn run_evloop(
+        &self,
+        instance: &Instance,
+        event: &Event,
+    ) -> Result<NextAction, Box<dyn StdError>> {
+        match self(instance, event) {
+            Ok(na) => Ok(na),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
 
-pub mod prelude {}
+impl<T, E> EventLoop for T
+where
+    T: Fn(&Event) -> Result<NextAction, E>,
+    E: Into<Box<dyn StdError>>,
+{
+    #[inline]
+    fn run_evloop(
+        &self,
+        _instance: &Instance,
+        event: &Event,
+    ) -> Result<NextAction, Box<dyn StdError>> {
+        match self(event) {
+            Ok(na) => Ok(na),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+pub(crate) fn default_eventloop(ev: &Event) -> crate::Result<NextAction> {
+    #[cfg(debug_assertions)]
+    log::debug!("Default eventloop received event: {:?}", ev);
+    Ok(NextAction::Continue)
+}

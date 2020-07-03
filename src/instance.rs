@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Event, EventType, GenericWindowInternal, Texture, Window};
+use crate::{Event, EventHandler, EventType, GenericWindowInternal, Texture, Window};
 use euclid::default::Rect;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 #[cfg(windows)]
@@ -52,12 +52,14 @@ use smallvec::SmallVec;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
+    error::Error as StdError,
     mem,
     sync::Arc,
 };
 
 struct InstanceInternal {
-    event_queue: Mutex<VecDeque<Event>>,
+    event_handler: Box<dyn EventLoop>,
+    event_queue: Mutex<SmallVec<[Event; 2]>>,
 
     #[cfg(target_os = "linux")]
     window_mappings: Mutex<HashMap<WindowID, Window>>,
@@ -69,8 +71,6 @@ struct InstanceInternal {
     im: flutterbug::InputMethod,
 
     #[cfg(windows)]
-    next_events: Mutex<Option<crate::Result<SmallVec<[Event; 2]>>>>,
-    #[cfg(windows)]
     window_mappings: Mutex<HashMap<usize, Window>>,
 }
 
@@ -80,6 +80,15 @@ struct InstanceInternal {
 /// that is needed to create windows and widgets.
 #[repr(transparent)]
 pub struct Instance(Arc<InstanceInternal>);
+
+impl PartialEq for Instance {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Instance {}
 
 unsafe impl Send for Instance {}
 unsafe impl Sync for Instance {}
@@ -97,51 +106,13 @@ impl Instance {
     pub fn new() -> crate::Result<Instance> {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
-                Self::flutterbug_new()
+                Self::flutterbug_new(Box::new(event_handler))
             } else if #[cfg(windows)] {
-                Self::porcupine_new()
+                Self::porcupine_new(Box::new(event_handler))
             } else {
                 unimplemented!()
             }
         }
-    }
-
-    /// Get the next event in the event queue.
-    #[inline]
-    pub fn next_event(&self) -> crate::Result<Event> {
-        #[inline]
-        fn hold_for_events(this: &Instance) -> crate::Result<SmallVec<[Event; 2]>> {
-            cfg_if::cfg_if! {
-                if #[cfg(target_os = "linux")] {
-                    Event::from_flutter(this, flutterbug::Event::next(&this.0.connection)?)
-                } else if #[cfg(windows)] {
-                    this.porcupine_hold_for_events()
-                } else {
-                    unimplemented!()
-                }
-            }
-        }
-
-        let mut evq = self.0.event_queue.lock();
-        while evq.len() == 0 {
-            hold_for_events(self)?
-                .into_iter()
-                .filter(|e| e.window().receives_event(&e.ty())) // filter out events the window can't receive
-                .try_for_each::<_, crate::Result<()>>(|e| {
-                    // make sure the pre-event is called
-                    e.window().prehandle_event(&e)?;
-                    evq.push_back(e);
-                    Ok(())
-                })?;
-        }
-        Ok(evq.pop_front().unwrap())
-    }
-
-    /// Enqueue an event in the event queue.
-    #[inline]
-    pub fn queue_event(&self, ev: Event) {
-        let mut evq = self.0.event_queue.lock();
-        evq.push_back(ev);
     }
 
     /// Create a new window.
@@ -164,6 +135,64 @@ impl Instance {
             }
         }
     }
+
+    /// Run an iteration of the Beetle event loop. Note that one invocation of this function
+    /// does not explicitly correspond to one event.
+    #[inline]
+    pub fn event_cycle(&self) -> crate::Result<bool> {
+        #[inline]
+        fn get_next_events(this: &Instance) -> crate::Result<SmallVec<[Event; 2]>> {
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "linux")] {
+                    Event::from_flutter(this, flutterbug::Event::next(&this.0.connection))
+                } else if #[cfg(windows)] {
+                    this.porcupine_get_next_events()
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+
+        #[inline]
+        fn handle_event_list<I>(this: &Instance, list: I) -> crate::Result<bool>
+        where
+            I: IntoIterator<Item = Event>,
+        {
+            for event in list {
+                let loop_action = this.0.event_loop(this, &event)?;
+
+                match (loop_action, event.is_quit_event()) {
+                    (NextAction::Break, _) | (_, true) => return Ok(false),
+                    (_, _) => event.dispatch()?,
+                }
+            }
+
+            Ok(true)
+        }
+
+        if handle_event_list(self, get_next_events(self)?)? {
+            handle_event_list(self.0.event_queue.lock().drain(..))
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Run the event handler on a sequence of events.
+    #[inline]
+    pub fn process_events<I>(&self, list: I)
+    where
+        I: IntoIterator<Item = Event>,
+    {
+        let mut eq = self.0.event_queue.lock();
+        eq.extend(I);
+    }
+
+    /// Queue a single event.
+    #[inline]
+    pub fn handle_event(&self, ev: Event) {
+        let mut eq = self.0.event_queue.lock();
+        eq.push(ev);
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -175,13 +204,14 @@ use flutterbug::x11::xlib::Window as WindowID;
 #[cfg(target_os = "linux")]
 impl Instance {
     /// Create the flutterbug instance of the Beetle GUI factory.
-    fn flutterbug_new() -> crate::Result<Instance> {
+    fn flutterbug_new(event_handler: Box<dyn EventLoop>) -> crate::Result<Instance> {
         use flutterbug::{prelude::*, Display};
 
         let dpy = Display::new()?;
 
         Ok(Self(Arc::new(InstanceInternal {
-            event_queue: Mutex::new(VecDeque::new()),
+            event_handler,
+            event_queue: Mutex::new(SmallVec::new()),
             window_mappings: Mutex::new(HashMap::new()),
             atoms: [dpy.internal_atom("WM_DELETE_WINDOW", false)?],
             im: dpy.input_method()?,
@@ -259,14 +289,14 @@ use porcupine::HWND;
 #[cfg(windows)]
 impl Instance {
     #[inline]
-    fn porcupine_new() -> crate::Result<Instance> {
+    fn porcupine_new(event_handler: Box<dyn EventLoop>) -> crate::Result<Instance> {
         // win32 doesn't really have a connection object like X11 does
         // however, we do well to initialize CommCtrl here
         porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
 
         Ok(Self(Arc::new(InstanceInternal {
+            event_handler,
             event_queue: Mutex::new(VecDeque::new()),
-            next_events: Mutex::new(None),
             window_mappings: Mutex::new(HashMap::new()),
         })))
     }
@@ -307,47 +337,5 @@ impl Instance {
         log::trace!("Accessing window by HWND {:p}", hwnd);
         let wm = self.0.window_mappings.lock();
         wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
-    }
-
-    #[inline]
-    fn porcupine_hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>> {
-        use smallvec::smallvec;
-
-        // we'll just intercept the event from the event loop
-        // NOTE: fix this if it causes problems
-        if let Some(msg) = porcupine::get_message()? {
-            porcupine::translate_message(&msg);
-            porcupine::dispatch_message(&msg); // calls window proc
-
-            // the window procedure should set the value, read it
-            let mut next_events = self.0.next_events.lock();
-            match next_events.take() {
-                Some(r) => r,
-                None => Err(crate::Error::StaticMsg(
-                    "Unable to retrieve events from window procedure",
-                )),
-            }
-        } else {
-            // if get_message return None, we need to quit
-            // any window here should work
-            let wm = self.0.window_mappings.lock();
-            let any_window = wm
-                .iter()
-                .map(|(_k, v)| v)
-                .next()
-                .expect("Did not have a top level window to assign the quit event to");
-            let mut quit_ev = Event::new(any_window, EventType::Quit, vec![]);
-            quit_ev.set_is_exit_event(true);
-            Ok(smallvec![quit_ev])
-        }
-    }
-
-    #[inline]
-    pub(crate) fn porcupine_set_next_events(
-        &self,
-        next_events: crate::Result<SmallVec<[Event; 2]>>,
-    ) {
-        let mut l = self.0.next_events.lock();
-        *l = Some(next_events);
     }
 }

@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/lib.rs - Root of the Beetle library.
+ * src/win32/mod.rs - Various utilities that make Win32 just a bit easier.
  * porcupine - Safe wrapper around the graphical parts of Win32.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,38 +43,4 @@
  * ----------------------------------------------------------------------------------
  */
 
-//! Beetle is a GUI library that aims to use a pull-based event system, rather than the push-based
-//! event system that most modern GUI frameworks use.
-//!
-//! Beetle is built upon the idea that control over the event loop should belong to the programmer,
-//! rather than the framework.
 
-#![feature(trait_alias)]
-
-//#![cfg_attr(target_os = "linux", feature("flutterbug"))]
-//#![cfg_attr(windows, feature("porcupine"))]
-pub mod color;
-pub mod error;
-pub mod ev_loop;
-pub mod event;
-pub mod instance;
-pub mod keyboard;
-pub mod mouse;
-pub mod ro_mmg;
-pub(crate) mod take_vec;
-pub mod texture;
-pub mod window;
-pub(crate) mod wndproc;
-
-pub use color::*;
-pub use error::*;
-pub use ev_loop::*;
-pub use event::*;
-pub use instance::*;
-pub use keyboard::*;
-pub use mouse::*;
-pub use ro_mmg::*;
-pub use texture::*;
-pub use window::*;
-
-pub mod prelude {}
