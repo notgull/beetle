@@ -43,11 +43,22 @@
  * ----------------------------------------------------------------------------------
  */
 
+use alloc::boxed::Box;
 use crate::Color;
 use euclid::default::Point2D;
 
-/// The graphics object.
-pub trait Graphics {
+#[cfg(target_os = "linux")]
+mod flutter;
+#[cfg(windows)]
+mod porc;
+#[cfg(target_os = "linux")]
+use flutter::*
+#[cfg(windows)]
+use porc::*;
+
+/// The internal graphics object. This is loaded into the Graphics object and used
+/// for its methods.
+pub trait InternalGraphics {
     /// Set the foreground color.
     fn set_foreground(&self, clr: Color) -> crate::Result<()>;
     
@@ -56,4 +67,52 @@ pub trait Graphics {
 
     /// Draw a line from one point to another, using the foreground color.
     fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()>;
+}
+
+// storage object for internal graphics object
+enum GraphicsStorage {
+    #[cfg(target_os = "linux")]
+    Flutter(FlutterbugGraphics<flutterbug::Window>),
+    #[cfg(windows)]
+    Porc(PorcupineGraphics),
+    Other(Box<dyn InternalGraphics>),
+}
+
+impl GraphicsStorage { 
+    #[inline]
+    fn graphics(&self) -> &dyn InternalGraphics {
+        #[cfg(target_os = "linux")]
+        if let Self::Flutter(ref fl) = self {
+            return fl;
+        }
+
+        #[cfg(windows)]
+        if let Self::Porc(ref p) = self {
+            return p;
+        }
+
+        if let Self::Other(ref o) = self {
+            return o;
+        }
+
+        unimplemented!()
+    }
+}
+
+/// The graphics object used in painting operations.
+#[repr(transparent)]
+pub struct Graphics(GraphicsStorage);
+
+impl Graphics {
+    /// Create a new graphics object from an object implementing InternalGraphics.
+    #[inline]
+    pub fn new<T: InternalGraphics>(internal: T) -> Graphics {
+        Self(GraphicsStorage::Other(Box::new(internal)))
+    }
+
+    /// Get a reference to the internal graphics object.
+    #[inline]
+    pub fn graphics(&self) -> &dyn InternalGraphics {
+        self.0.graphics()
+    }
 }

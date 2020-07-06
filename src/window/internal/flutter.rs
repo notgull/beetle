@@ -87,8 +87,9 @@ impl GenericWindowInternal for WindowInternal {
 
         let inner = dpy.create_simple_window(
             match inner_win {
+                Some(Err(e)) => return Err(e),
                 None => None,
-                Some(ref mut l) => Some(l.inner_flutter_window()),
+                Some(Ok(ref mut l)) => Some(l.inner_flutter_window()),
             },
             Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
             bounds.size,
@@ -124,8 +125,8 @@ impl GenericWindowInternal for WindowInternal {
     }
 
     #[inline]
-    fn text(&mut self) -> &mut str {
-        &mut self.text
+    fn text(&self) -> &str {
+        &self.text
     }
 
     #[inline]
@@ -165,7 +166,7 @@ impl GenericWindowInternal for WindowInternal {
         Ok(self.inner.map(true)?)
     }
 
-    fn receive_events(&mut self, events: &[EventType]) -> crate::Result<()> {
+    fn receive_events(&self, events: &[EventType]) -> crate::Result<()> {
         // figure out which events correspond to which X11 event masks
         lazy_static::lazy_static! {
             static ref X11_EVENT_MAPPING: HashMap<EventType, SmallVec<[EventMask; 1]>> = {
@@ -227,8 +228,8 @@ impl GenericWindowInternal for WindowInternal {
         )?)
     }
 
-    fn background(&mut self) -> Option<&mut Texture> {
-        self.background.as_mut()
+    fn background(&self) -> Option<&Texture> {
+        self.background.as_ref()
     }
 
     fn set_background(&mut self, texture: Option<Texture>) {
@@ -243,12 +244,12 @@ impl GenericWindowInternal for WindowInternal {
 
 impl WindowInternal {
     /// Get the internal Flutterbug window.
-    pub fn inner_flutter_window(&mut self) -> &mut FWindow {
-        &mut self.inner
+    pub fn inner_flutter_window(&self) -> &FWindow {
+        &self.inner
     }
 
     /// Get the input context.
-    pub fn ic(&mut self) -> &mut InputContext {
-        &mut self.ic
+    pub fn ic(&self) -> &InputContext {
+        &self.ic
     }
 }

@@ -123,7 +123,7 @@ pub unsafe extern "system" fn beetle_wndproc(
             GWLP_USERDATA,
             window_object_ptr as *const () as LONG_PTR,
         );
-        
+
         //return TRUE as LRESULT;
         return DefWindowProcA(hwnd, msg, wparam, lparam);
     }
@@ -180,7 +180,16 @@ pub unsafe extern "system" fn beetle_wndproc(
             DestroyWindow(hwnd);
         }
         WM_DESTROY => {
-            if window.is_top_level() {
+            if match window.is_top_level() {
+                Ok(tl) => tl,
+                Err(e) => {
+                    log::error!(
+                        "Unable to retrieve whether the window is top level: {:?}. Assuming that it isn't.", 
+                        e
+                    );
+                    false
+                }
+            } {
                 PostQuitMessage(0);
                 return 0;
             }

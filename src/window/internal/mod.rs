@@ -82,13 +82,13 @@ pub trait GenericWindowInternal: Sized {
 
     /// Respond to an event.
     #[inline]
-    fn handle_event(&mut self, event: &Event) -> crate::Result<()> {
+    fn handle_event(&self, event: &Event) -> crate::Result<()> {
         // run the default event handler after everything is done
         (self.event_handler())(event)
     }
 
     /// Receive certain types of events.
-    fn receive_events(&mut self, events: &[EventType]) -> crate::Result<()>;
+    fn receive_events(&self, events: &[EventType]) -> crate::Result<()>;
 
     /// Get the current event handler.
     fn event_handler(&self) -> &dyn EventHandler;
@@ -98,13 +98,13 @@ pub trait GenericWindowInternal: Sized {
 
     /// Get the text associated with this window. This can either be the title bar or
     /// the text contained within.
-    fn text(&mut self) -> &mut str;
+    fn text(&self) -> &str;
 
     /// Set the text associated with this window.
     fn set_text(&mut self, txt: String) -> crate::Result<String>;
 
     /// Get the texture used for the background of this window.
-    fn background(&mut self) -> Option<&mut Texture>;
+    fn background(&self) -> Option<&Texture>;
 
     /// Set the texture used for the background of this window.
     fn set_background(&mut self, texture: Option<Texture>);

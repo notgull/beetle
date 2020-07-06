@@ -52,6 +52,6 @@ pub fn unique_id() -> usize {
     // mutexes are constant initialization in nightly
     static NEXT_ID: Mutex<AtomicUsize> = Mutex::new(AtomicUsize::new(0));
 
-    let mut lock = NEXT_ID.lock();
+    let lock = NEXT_ID.lock();
     lock.fetch_add(1, Ordering::SeqCst) // TODO: this might be too expensive, research atomics some more
 }

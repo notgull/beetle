@@ -44,7 +44,8 @@
  */
 
 use crate::{
-    mutexes::Mutex, Event, EventHandler, EventType, GenericWindowInternal, Texture, Window,
+    mutexes::{Mutex, RwLock},
+    Event, EventHandler, EventType, GenericWindowInternal, Texture, Window,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 use core::{mem, option::Option};
@@ -165,7 +166,7 @@ impl Instance {
             }
         }
 
-        let mut evq = self.0.event_queue.lock(); 
+        let mut evq = self.0.event_queue.lock();
         match evq.pop_front() {
             Some(ev) => Ok(ev),
             None => {
@@ -175,7 +176,9 @@ impl Instance {
                 let mut ne: Option<Event> = None;
                 while ne.is_none() {
                     let mut new_evs = hold_for_events(self)?;
-                    let mut drain = new_evs.drain(..).filter(|e| e.window().receives_event(&e.ty()));
+                    let mut drain = new_evs
+                        .drain(..)
+                        .filter(|e| e.window().receives_event(&e.ty()));
                     let mut evq = self.0.event_queue.lock();
 
                     ne = drain.next();
@@ -255,7 +258,7 @@ impl Instance {
         let ex_id = cw.inner_flutter_window().window();
 
         let w = Window::from_raw(
-            Arc::new(Mutex::new(cw)),
+            Arc::new(RwLock::new(cw)),
             Arc::new(Mutex::new(HashSet::new())),
             id,
             self.clone(),
@@ -293,13 +296,12 @@ impl Instance {
         background: Option<Texture>,
         is_top_level: bool,
     ) -> crate::Result<Window> {
-        let mut cw =
-            crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
+        let cw = crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
         let id = cw.id();
         let ex_id = cw.inner_porc_window().hwnd().as_ptr() as *const () as usize;
 
         let w = Window::from_raw(
-            Arc::new(Mutex::new(cw)),
+            Arc::new(RwLock::new(cw)),
             Arc::new(Mutex::new(HashSet::new())),
             id,
             self.clone(),

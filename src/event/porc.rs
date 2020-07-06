@@ -94,7 +94,7 @@ impl Event {
             WM_CLOSE => {
                 log::debug!("Found WM_CLOSE message");
                 evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
-                if assoc_window.is_top_level() {
+                if assoc_window.is_top_level()? {
                     let mut qm = Event::new(&assoc_window, EventType::Quit, vec![]);
                     qm.set_is_exit_event(true);
                     evs.push(qm);
@@ -127,6 +127,7 @@ impl Event {
                 let loc: Option<Point2D<u32>> = match porcupine::cursor_pos().and_then(|f| {
                     assoc_window
                         .inner_window()
+                        .expect("Unable to acquire read access to window lock")
                         .inner_porc_window()
                         .screen_to_client(f)
                 }) {
@@ -159,7 +160,7 @@ impl Event {
                 let old_bounds = assoc_window.bounds();
 
                 // make sure to store the bounds
-                assoc_window.store_old_bounds();
+                assoc_window.store_old_bounds()?;
 
                 // the (false, false) asserts that it's from the event loop and that a BoundsChanged event
                 // should not be emitted
@@ -176,7 +177,7 @@ impl Event {
             WM_WINDOWPOSCHANGED => {
                 log::debug!("Found WM_WINDOWPOSCHANGED");
                 let new_bounds: Rect<u32> = get_newbounds(lparam)?;
-                let old_bounds = match assoc_window.take_old_bounds() {
+                let old_bounds = match assoc_window.take_old_bounds()? {
                     Some(ob) => ob,
                     None => {
                         log::error!("{}", OLD_BOUNDS_NOT_FOUND);

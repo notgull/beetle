@@ -43,10 +43,8 @@
  * ----------------------------------------------------------------------------------
  */
 
-#[cfg(feature = "std")]
-use crate::ReadOnlyMappedMutexGuard;
 use crate::{
-    mutexes::{Mutex, MutexGuard},
+    mutexes::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
     Event, EventType, Instance, Texture,
 };
 use alloc::{
@@ -62,6 +60,8 @@ use core::{
 };
 use euclid::default::Rect;
 use hashbrown::HashSet;
+#[cfg(feature = "std")]
+use parking_lot::MappedRwLockReadGuard;
 #[cfg(windows)]
 use porcupine::{
     prelude::*,
@@ -133,7 +133,7 @@ const DEFAULT_EVENTS: [EventType; 12] = [
 /// # }
 /// ```
 pub struct Window {
-    inner: Arc<Mutex<WindowInternal>>,
+    inner: Arc<RwLock<WindowInternal>>,
     handled_events: Arc<Mutex<HashSet<EventType>>>,
     instance: Instance,
     id: usize,
@@ -185,7 +185,7 @@ impl Window {
     /// Internal function to create a new Window.
     #[inline]
     pub(crate) fn from_raw(
-        inner: Arc<Mutex<WindowInternal>>,
+        inner: Arc<RwLock<WindowInternal>>,
         handled_events: Arc<Mutex<HashSet<EventType>>>,
         id: usize,
         instance: Instance,
@@ -228,19 +228,25 @@ impl Window {
     /// ```
     #[cfg(feature = "std")]
     #[inline]
-    pub fn text(&self) -> ReadOnlyMappedMutexGuard<'_, str> {
-        log::debug!("Providing mutex lock \"text\" from window id {}", self.id());
-        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.text())
+    pub fn text(&self) -> crate::Result<MappedRwLockReadGuard<'_, str>> {
+        log::debug!("Providing read lock \"text\" from window id {}", self.id());
+        self.inner
+            .try_read()
+            .map(|i| RwLockReadGuard::map(i, |i| i.text()))
+            .ok_or_else(|| crate::Error::UnableToRead)
     }
 
     /// Set the text associated with this window. This will emit a TextChanged event.
     #[inline]
     pub fn set_text(&self, text: String) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_text\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked read access for \"set_text\"");
+        let l = self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_text\""));
+        defer!(log::trace!("Unlocked read access for \"set_text\""));
 
         self.instance.queue_event(Event::new(
             self,
@@ -252,10 +258,15 @@ impl Window {
 
     fn set_text_internal(&self, text: String) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_text_internal\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked write access for \"set_text_internal\"");
+        let mut l = self
+            .inner
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToWrite)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_text_internal\""));
+        defer!(log::trace!(
+            "Unlocked write access for \"set_text_internal\""
+        ));
 
         let cloned_text = Arc::new(text.clone());
         self.instance.queue_event(Event::new(
@@ -270,14 +281,20 @@ impl Window {
     ///
     /// The Event Handler is a function run after normal event processing is done.
     #[inline]
-    pub fn set_event_handler<F: EventHandler>(&self, evh: F) {
+    pub fn set_event_handler<F: EventHandler>(&self, evh: F) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_event_handler\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked write access for \"set_event_handler\"");
+        let mut l = self
+            .inner
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToWrite)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_event_handler\""));
+        defer!(log::trace!(
+            "Unlocked write access for \"set_event_handler\""
+        ));
 
         l.set_event_handler(evh);
+        Ok(())
     }
 
     /// Handle an event.
@@ -296,10 +313,13 @@ impl Window {
         }
 
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"handle_event\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked read access for \"handle_event\"");
+        let l = self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"handle_event\""));
+        defer!(log::trace!("Unlocked read access for \"handle_event\""));
 
         l.handle_event(event)
     }
@@ -309,7 +329,12 @@ impl Window {
     pub fn prehandle_event(&self, event: &Event) -> crate::Result<()> {
         match event.ty() {
             EventType::Paint => {
-                if let Some(background) = self.inner.lock().background() {
+                if let Some(background) = self
+                    .inner
+                    .try_read()
+                    .ok_or_else(|| crate::Error::UnableToRead)?
+                    .background()
+                {
                     // TODO: paint texture for window
                 }
             }
@@ -322,17 +347,18 @@ impl Window {
     /// Get the background for this window.
     #[cfg(feature = "std")]
     #[inline]
-    pub fn background(&self) -> Option<ReadOnlyMappedMutexGuard<'_, Texture>> {
+    pub fn background(&self) -> crate::Result<Option<MappedRwLockReadGuard<'_, Texture>>> {
         log::debug!(
             "Providing mutex lock \"background\" from window id {}",
             self.id()
         );
-        let mut l = self.inner.lock();
+        let l = self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?;
         match l.background() {
-            Some(_) => Some(ReadOnlyMappedMutexGuard::from_guard(l, |i| {
-                i.background().unwrap()
-            })),
-            None => None,
+            None => Ok(None),
+            Some(_b) => Ok(Some(RwLockReadGuard::map(l, |l| l.background().unwrap()))),
         }
     }
 
@@ -345,10 +371,13 @@ impl Window {
         he.extend(event_types);
 
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"receive_events\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked read access for \"receive_events\"");
+        let mut l = self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"receive_events\""));
+        defer!(log::trace!("Unlocked read access for \"receive_events\""));
 
         l.receive_events(event_types)
     }
@@ -373,24 +402,31 @@ impl Window {
 
     /// Tell if this window is a top-level window.
     #[inline]
-    pub fn is_top_level(&self) -> bool {
+    pub fn is_top_level(&self) -> crate::Result<bool> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"is_top_level\"");
+        log::trace!("Locked read access for \"is_top_level\"");
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"is_top_level\""));
+        defer!(log::trace!("Unlocked read access for \"is_top_level\""));
 
-        self.inner.lock().is_top_level()
+        Ok(self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?
+            .is_top_level())
     }
 
     /// Get the bounds of this window.
     #[inline]
-    pub fn bounds(&self) -> Rect<u32> {
+    pub fn bounds(&self) -> crate::Result<Rect<u32>> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"bounds\"");
+        log::trace!("Locked read access for \"bounds\"");
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"bounds\""));
+        defer!(log::trace!("Unlocked read access for \"bounds\""));
 
-        self.inner.lock().bounds()
+        self.inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)
+            .map(|i| i.bounds())
     }
 
     fn set_bounds_internal(
@@ -400,10 +436,15 @@ impl Window {
         enqueue: bool,
     ) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_bounds_internal\"");
-        let mut l = self.inner.lock();
+        log::trace!("Locked write access for \"set_bounds_internal\"");
+        let mut l = self
+            .inner
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToWrite)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_bounds_internal\""));
+        defer!(log::trace!(
+            "Unlocked write access for \"set_bounds_internal\""
+        ));
 
         let old_bounds = l.set_bounds(bounds, backend)?;
 
@@ -424,10 +465,13 @@ impl Window {
         // this should just send a BoundsChanging event through, since that calls
         // set_bounds_internal when dispatched
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_bounds\"");
-        let l = self.inner.lock();
+        log::trace!("Locked read access for \"set_bounds\"");
+        let l = self
+            .inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?;
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_bounds\""));
+        defer!(log::trace!("Unlocked read access for \"set_bounds\""));
 
         self.instance.queue_event(Event::new(
             self,
@@ -447,18 +491,18 @@ impl Window {
     #[inline]
     pub fn show(&self) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"show\"");
+        log::trace!("Locked write_access for \"show\"");
 
         // Win32 Note: show() calls the window proc, which needs access to the mutex, which causes
         // a deadlock. To circumvent this, we call show() and update() manually
 
         cfg_if::cfg_if! {
             if #[cfg(windows)] {
-                let mut l = self.inner.lock();
+                let l = self.inner.try_read().ok_or_else(|| crate::Error::UnableToRead)?;
                 let weak = l.inner_porc_window().weak_reference();
                 mem::drop(l);
                 #[cfg(debug_assertions)]
-                log::trace!("Unlocked mutex for \"show\"");
+                log::trace!("Unlocked read access for \"show\"");
 
                 // call show() and update()
                 weak.show(porcupine::CmdShow::Show);
@@ -466,9 +510,9 @@ impl Window {
                 Ok(())
             } else {
                 #[cfg(debug_assertions)]
-                defer!(log::trace!("Unlocked mutex for \"show\""));
+                defer!(log::trace!("Unlocked read access for \"show\""));
 
-                self.inner.lock().show()
+                self.inner.try_read().ok_or_else(|| crate::Error::UnableToRead)?.show()
             }
         }
     }
@@ -476,36 +520,53 @@ impl Window {
     /// Force a repaint operation on the window.
     #[inline]
     pub fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()> {
-        self.inner.lock().repaint(bounds)
+        self.inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?
+            .repaint(bounds)
     }
 }
 
 impl Window {
     #[inline]
-    pub(crate) fn inner_window(&self) -> MutexGuard<'_, internal::WindowInternal> {
-        self.inner.lock()
+    pub(crate) fn inner_window(
+        &self,
+    ) -> crate::Result<RwLockReadGuard<'_, internal::WindowInternal>> {
+        self.inner
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)
     }
 }
 
 #[cfg(windows)]
 impl Window {
     #[inline]
-    pub(crate) fn store_old_bounds(&self) {
+    pub(crate) fn store_old_bounds(&self) -> crate::Result<()> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"store_old_bounds\"");
+        log::trace!("Locked write access for \"store_old_bounds\"");
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"store_old_bounds\""));
+        defer!(log::trace!(
+            "Unlocked write access for \"store_old_bounds\""
+        ));
 
-        self.inner.lock().store_old_bounds();
+        self.inner
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToWrite)?
+            .store_old_bounds();
+        Ok(())
     }
 
     #[inline]
-    pub(crate) fn take_old_bounds(&self) -> Option<Rect<u32>> {
+    pub(crate) fn take_old_bounds(&self) -> crate::Result<Option<Rect<u32>>> {
         #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"take_old_bounds\"");
+        log::trace!("Locked write access for \"take_old_bounds\"");
         #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"take_old_bounds\""));
+        defer!(log::trace!("Unlocked write access for \"take_old_bounds\""));
 
-        self.inner.lock().take_old_bounds()
+        Ok(self
+            .inner
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToRead)?
+            .take_old_bounds())
     }
 }

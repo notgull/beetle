@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/error.rs - A common error type for all Beetle functions.
+ * src/graphics/flutter.rs - Flutterbug graphics object.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,81 +43,15 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::{fmt, num::TryFromIntError};
-#[cfg(target_os = "linux")]
-use flutterbug::FlutterbugError;
-#[cfg(windows)]
-use porcupine::Error as PorcupineError;
+use crate::Color;
+use euclid::default::Point2D;
+use super:InternalGraphics;
+use flutterbug::prelude::*;
 
-/// Common error type returned by Beetle functions.
-#[derive(Debug)]
-pub enum Error {
-    StaticMsg(&'static str),
-    #[cfg(target_os = "linux")]
-    Flutter(FlutterbugError),
-    #[cfg(windows)]
-    Porc(PorcupineError),
-    TryFromInt(TryFromIntError),
-
-    WindowNotFound,
-    KeysymNotFound,
-    WindowIDNoDowncast,
-    UnableToWrite,
-    UnableToRead,
+/// The graphics interface to a Flutterbug drawable object.
+pub struct FlutterbugGraphics<D> {
+    drawable: D,
 }
 
-impl fmt::Display for Error {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(target_os = "linux")]
-        {
-            if let Self::Flutter(ref flutter) = self {
-                return fmt::Display::fmt(flutter, f);
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            if let Self::Porc(ref porc) = self {
-                return fmt::Display::fmt(porc, f);
-            }
-        }
-
-        match self {
-            Self::StaticMsg(s) => f.pad(s),
-            Self::TryFromInt(ref i) => fmt::Display::fmt(i, f),
-            Self::WindowNotFound => f.pad("Unable to find window in window mappings"),
-            Self::KeysymNotFound => f.pad("Unable to find key symbol corresponding to input"),
-            Self::WindowIDNoDowncast => f.pad("Window ID did not downcast to a valid element"),
-            Self::UnableToWrite => f.pad("Unable to write to RwLock"),
-            Self::UnableToRead => f.pad("Unable to read from RwLock"),
-            _ => unreachable!(),
-        }
-    }
+impl<D: Drawable> InternalGraphics for FlutterbugGraphics<D> {
 }
-
-#[cfg(target_os = "linux")]
-impl From<FlutterbugError> for Error {
-    #[inline]
-    fn from(fe: FlutterbugError) -> Self {
-        Self::Flutter(fe)
-    }
-}
-
-#[cfg(windows)]
-impl From<PorcupineError> for Error {
-    #[inline]
-    fn from(p: PorcupineError) -> Self {
-        Self::Porc(p)
-    }
-}
-
-impl From<TryFromIntError> for Error {
-    #[inline]
-    fn from(tfie: TryFromIntError) -> Self {
-        Self::TryFromInt(tfie)
-    }
-}
-
-/// Result type that returns beetle::Error to make things more conveinent.
-pub type Result<T> = core::result::Result<T, Error>;

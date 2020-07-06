@@ -44,8 +44,12 @@
  */
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
-use alloc::{boxed::Box, string::{String, ToString}, sync::Arc};
 use crate::{take_vec::TakeVec, Event, EventType, Instance, Texture};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    sync::Arc,
+};
 use core::{any::Any, convert::TryInto, mem, sync::atomic::AtomicPtr};
 use cty::c_int;
 use euclid::default::Rect;
@@ -115,8 +119,8 @@ impl GenericWindowInternal for WindowInternal {
             | WindowStyle::CAPTION;
 
         // create internal window
-        let mut l = parent.map(|p| p.inner_window());
-        let mut pw = PWindow::with_creation_param(
+        let l = parent.map(|p| p.inner_window());
+        let pw = PWindow::with_creation_param(
             &BEETLE_WINDOW_CLASS,
             &text,
             default_ws,
@@ -129,9 +133,10 @@ impl GenericWindowInternal for WindowInternal {
             ),
             match l {
                 None => None,
-                Some(ref mut l) => Some(l.inner_porc_window()),
+                Some(Err(e)) => return Err(e),
+                Some(Ok(ref l)) => Some(l.inner_porc_window()),
             },
-            Some(Box::new(instance.clone())),
+            Some(Box::new(instance.clone())), // pass the instance to WM_NCCREATE
         )?;
 
         Ok(Self {
@@ -147,7 +152,7 @@ impl GenericWindowInternal for WindowInternal {
     }
 
     #[inline]
-    fn receive_events(&mut self, _events: &[EventType]) -> crate::Result<()> {
+    fn receive_events(&self, _events: &[EventType]) -> crate::Result<()> {
         // no-op
         Ok(())
     }
@@ -163,8 +168,8 @@ impl GenericWindowInternal for WindowInternal {
     }
 
     #[inline]
-    fn text(&mut self) -> &mut str {
-        &mut self.text
+    fn text(&self) -> &str {
+        &self.text
     }
 
     #[inline]
@@ -177,8 +182,8 @@ impl GenericWindowInternal for WindowInternal {
     }
 
     #[inline]
-    fn background(&mut self) -> Option<&mut Texture> {
-        self.background.as_mut()
+    fn background(&self) -> Option<&Texture> {
+        self.background.as_ref()
     }
 
     #[inline]
@@ -239,8 +244,8 @@ impl GenericWindowInternal for WindowInternal {
 
 impl WindowInternal {
     #[inline]
-    pub(crate) fn inner_porc_window(&mut self) -> &mut PWindow {
-        &mut self.inner
+    pub(crate) fn inner_porc_window(&self) -> &PWindow {
+        &self.inner
     }
 
     #[inline]

@@ -76,7 +76,7 @@ impl Event {
             // X11 events involving a key press
             FEvent::Key(k) => {
                 // get the key information from the event
-                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.inner_window().ic())?;
+                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.inner_window()?.ic())?;
                 let mut ki = KeyInfo::new(KeyType::from_keysym(
                     ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
                 ));
@@ -121,7 +121,7 @@ impl Event {
             // Re-rendering of the window
             FEvent::Expose(e) => {
                 // if the size isn't the same, set up a changed bounds event
-                let old_bounds = assoc_window.bounds();
+                let old_bounds = assoc_window.bounds()?;
                 let new_bounds =
                     euclid::rect(e.x().try_into()?, e.y().try_into()?, e.width(), e.height());
 
@@ -183,7 +183,7 @@ impl Event {
                     evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
 
                     // also send a quit event if this is the top-level window
-                    if assoc_window.is_top_level() {
+                    if assoc_window.is_top_level()? {
                         let mut quit_ev = Event::new(&assoc_window, EventType::Quit, vec![]);
                         quit_ev.set_is_exit_event(true);
                         evs.push(quit_ev);
