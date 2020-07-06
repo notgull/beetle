@@ -44,9 +44,11 @@
  */
 
 use crate::Color;
+#[cfg(feature = "std")]
 use image::DynamicImage;
 
 pub enum Texture {
     Color(Color),
+    #[cfg(feature = "std")]
     Image(DynamicImage),
 }

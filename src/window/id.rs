@@ -43,20 +43,15 @@
  * ----------------------------------------------------------------------------------
  */
 
-use parking_lot::Mutex;
+use crate::mutexes::Mutex;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Get an ID that is guaranteed to be unique to the window within the
 /// bounds of the program.
 pub fn unique_id() -> usize {
-    lazy_static::lazy_static! {
-        static ref NEXT_ID_CONTAINER: Mutex<usize> = Mutex::new(0);
-    }
+    // mutexes are constant initialization in nightly
+    static NEXT_ID: Mutex<AtomicUsize> = Mutex::new(AtomicUsize::new(0));
 
-    let mut lock = NEXT_ID_CONTAINER.lock();
-
-    let res: usize = *lock;
-    // if we ever have more windows than addresses available in the
-    // address space, we have bigger problems
-    *lock += 1;
-    res
+    let mut lock = NEXT_ID.lock();
+    lock.fetch_add(1, Ordering::SeqCst) // TODO: this might be too expensive, research atomics some more
 }

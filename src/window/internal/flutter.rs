@@ -45,19 +45,15 @@
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
 use crate::{EventType, Instance, Texture};
+use alloc::{boxed::Box, string::String, sync::Arc};
+use core::{convert::TryInto, mem};
 use euclid::default::{Point2D, Rect};
 use flutterbug::{
     prelude::*, Event as FEvent, EventMask, EventType as FEventType, ExposeEvent, InputContext,
     Window as FWindow,
 };
+use hashbrown::{HashMap, HashSet};
 use smallvec::{smallvec, SmallVec};
-use std::{
-    boxed::Box,
-    collections::{HashMap, HashSet},
-    convert::TryInto,
-    mem,
-    sync::Arc,
-};
 
 pub struct WindowInternal {
     inner: FWindow,
@@ -86,14 +82,29 @@ impl GenericWindowInternal for WindowInternal {
     ) -> crate::Result<Self> {
         // create the struct representing the internal flutterbug window
         let dpy = instance.display();
-        let inner = dpy.create_simple_window(
-            parent.map(|p| p.inner_flutter_window()).as_deref(),
-            Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
-            bounds.size,
-            1,
-            dpy.default_white_pixel()?,
-            dpy.default_white_pixel()?,
-        )?;
+        // TODO: let's not duplicate code here
+        let inner = match parent {
+            Some(ref p) => {
+                let mut p2 = p.inner_window();
+
+                dpy.create_simple_window(
+                    Some(p2.inner_flutter_window()),
+                    Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
+                    bounds.size,
+                    1,
+                    dpy.default_white_pixel()?,
+                    dpy.default_white_pixel()?,
+                )
+            }
+            None => dpy.create_simple_window(
+                None,
+                Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
+                bounds.size,
+                1,
+                dpy.default_white_pixel()?,
+                dpy.default_white_pixel()?,
+            ),
+        }?;
 
         inner.set_protocols(&mut [instance.delete_window_atom()])?;
         inner.store_name(&text)?;

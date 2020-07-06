@@ -45,6 +45,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+// we only use this if we have parking_lot mutexes
+#![cfg(feature = "std")]
+
 use parking_lot::{MappedMutexGuard, MutexGuard};
 use std::ops::Deref;
 

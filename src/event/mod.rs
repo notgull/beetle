@@ -44,9 +44,9 @@
  */
 
 use crate::{KeyInfo, MouseButton, Window};
+use alloc::{string::String, sync::Arc, vec::Vec};
+use core::{any::Any, fmt, option::Option};
 use euclid::default::{Point2D, Rect};
-use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
-use std::{any::Any, fmt, sync::Arc};
 
 #[cfg(target_os = "linux")]
 mod flutter;

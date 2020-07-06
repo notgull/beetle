@@ -45,6 +45,7 @@
 
 pub(crate) use super::{unique_id, Window};
 use crate::{Event, EventType, Instance, Texture};
+use alloc::string::String;
 use euclid::default::Rect;
 
 #[cfg(target_os = "linux")]

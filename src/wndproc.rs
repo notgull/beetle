@@ -46,6 +46,8 @@
 #![cfg(windows)]
 
 use crate::{Event, Instance, Window};
+use core::{any::Any, mem};
+use maybe_uninit::MaybeUninit;
 use porcupine::winapi::{
     shared::{
         basetsd::LONG_PTR,
@@ -54,7 +56,6 @@ use porcupine::winapi::{
     },
     um::{errhandlingapi, winuser::*},
 };
-use std::{any::Any, mem};
 
 /// The window procedure used by Beetle.
 ///
@@ -188,7 +189,7 @@ pub unsafe extern "system" fn beetle_wndproc(
             // if the background for us is None, we can just paint
             // the default background here
             if let None = window.background() {
-                let mut ps: mem::MaybeUninit<PAINTSTRUCT> = mem::MaybeUninit::uninit();
+                let mut ps: MaybeUninit<PAINTSTRUCT> = MaybeUninit::uninit();
                 let hdc = BeginPaint(hwnd, ps.as_mut_ptr());
                 let mut ps = ps.assume_init();
 

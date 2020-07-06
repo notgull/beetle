@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 /// The types of keys that can be depressed on the keyboard.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]

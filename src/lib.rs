@@ -50,12 +50,19 @@
 //! rather than the framework.
 
 #![feature(trait_alias)]
+#![no_std]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+#[cfg(feature = "std")]
+extern crate std as alloc;
 
 //#![cfg_attr(target_os = "linux", feature("flutterbug"))]
 //#![cfg_attr(windows, feature("porcupine"))]
 pub mod color;
 pub mod error;
-pub mod ev_loop;
 pub mod event;
 pub mod instance;
 pub mod keyboard;
@@ -68,13 +75,23 @@ pub(crate) mod wndproc;
 
 pub use color::*;
 pub use error::*;
-pub use ev_loop::*;
 pub use event::*;
 pub use instance::*;
 pub use keyboard::*;
 pub use mouse::*;
+#[cfg(feature = "std")]
 pub use ro_mmg::*;
 pub use texture::*;
 pub use window::*;
+
+// helper for mutex operations
+// if the std feature is activated, we can use parking_lot mutexes
+// otherwise, we fall back to spin mutexes
+pub(crate) mod mutexes {
+    #[cfg(feature = "std")]
+    pub use parking_lot::*;
+    #[cfg(not(feature = "std"))]
+    pub use spin::*;
+}
 
 pub mod prelude {}

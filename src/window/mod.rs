@@ -43,9 +43,25 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Event, EventType, Instance, ReadOnlyMappedMutexGuard, Texture};
+#[cfg(feature = "std")]
+use crate::ReadOnlyMappedMutexGuard;
+use crate::{
+    mutexes::{Mutex, MutexGuard},
+    Event, EventType, Instance, Texture,
+};
+use alloc::{
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+};
+use core::{
+    any::Any,
+    fmt,
+    hash::{Hash, Hasher},
+    mem,
+};
 use euclid::default::Rect;
-use parking_lot::Mutex;
+use hashbrown::HashSet;
 #[cfg(windows)]
 use porcupine::{
     prelude::*,
@@ -56,14 +72,6 @@ use porcupine::{
 };
 #[cfg(debug_assertions)]
 use scopeguard::defer;
-use std::{
-    any::Any,
-    collections::HashSet,
-    fmt,
-    hash::{Hash, Hasher},
-    mem,
-    sync::Arc,
-};
 
 mod id;
 pub(crate) use id::*;
@@ -218,6 +226,7 @@ impl Window {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(feature = "std")]
     #[inline]
     pub fn text(&self) -> ReadOnlyMappedMutexGuard<'_, str> {
         log::debug!("Providing mutex lock \"text\" from window id {}", self.id());
@@ -327,7 +336,7 @@ impl Window {
     pub fn prehandle_event(&self, event: &Event) -> crate::Result<()> {
         match event.ty() {
             EventType::Paint => {
-                if let Some(background) = self.background() {
+                if let Some(background) = self.inner.lock().background() {
                     // TODO: paint texture for window
                 }
             }
@@ -338,6 +347,7 @@ impl Window {
     }
 
     /// Get the background for this window.
+    #[cfg(feature = "std")]
     #[inline]
     pub fn background(&self) -> Option<ReadOnlyMappedMutexGuard<'_, Texture>> {
         log::debug!(
@@ -496,47 +506,15 @@ impl Window {
     }
 }
 
-#[cfg(target_os = "linux")]
 impl Window {
-    /// The inner Flutterbug window.
     #[inline]
-    pub(crate) fn inner_flutter_window(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::Window> {
-        log::debug!(
-            "Providing mutex lock \"inner_flutter_window\" from window id {}",
-            self.id()
-        );
-        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_flutter_window())
-    }
-
-    #[inline]
-    pub(crate) fn ic(&self) -> ReadOnlyMappedMutexGuard<'_, flutterbug::InputContext> {
-        log::debug!("Providing mutex lock \"ic\" from window id {}", self.id());
-        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.ic())
+    pub(crate) fn inner_window(&self) -> MutexGuard<'_, internal::WindowInternal> {
+        self.inner.lock()
     }
 }
 
 #[cfg(windows)]
 impl Window {
-    /// The inner Porcupine window.
-    #[inline]
-    pub(crate) fn inner_porc_window(&self) -> ReadOnlyMappedMutexGuard<'_, porcupine::Window> {
-        log::debug!(
-            "Providing mutex lock \"inner_porc_window\" from window id {}",
-            self.id()
-        );
-        ReadOnlyMappedMutexGuard::from_guard(self.inner.lock(), |i| i.inner_porc_window())
-    }
-
-    #[inline]
-    pub(crate) fn set_user_data<T>(&self, data: T) -> crate::Result<()> {
-        #[cfg(debug_assertions)]
-        log::trace!("Locked mutex for \"set_user_data\"");
-        #[cfg(debug_assertions)]
-        defer!(log::trace!("Unlocked mutex for \"set_user_data\""));
-
-        self.inner.lock().set_user_data(data)
-    }
-
     #[inline]
     pub(crate) fn store_old_bounds(&self) {
         #[cfg(debug_assertions)]

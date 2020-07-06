@@ -48,7 +48,7 @@
 #![cfg(windows)]
 #![allow(dead_code)]
 
-use std::{fmt, mem};
+use core::{fmt, mem};
 
 /// A container, where every item is identical, and a certain number of items can be
 /// "taken" from it.

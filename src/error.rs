@@ -43,35 +43,77 @@
  * ----------------------------------------------------------------------------------
  */
 
+use core::{fmt, num::TryFromIntError};
 #[cfg(target_os = "linux")]
 use flutterbug::FlutterbugError;
 #[cfg(windows)]
 use porcupine::Error as PorcupineError;
-use std::num::TryFromIntError;
-use thiserror::Error;
 
 /// Common error type returned by Beetle functions.
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum Error {
-    #[error("{0}")]
     StaticMsg(&'static str),
-
     #[cfg(target_os = "linux")]
-    #[error("{0}")]
-    Flutter(#[from] FlutterbugError),
+    Flutter(FlutterbugError),
     #[cfg(windows)]
-    #[error("{0}")]
-    Porc(#[from] PorcupineError),
-    #[error("{0}")]
-    TryFromInt(#[from] TryFromIntError),
+    Porc(PorcupineError),
+    TryFromInt(TryFromIntError),
 
-    #[error("Unable to find window in window mappings")]
     WindowNotFound,
-    #[error("Unable to find key symbol corresponding to input")]
     KeysymNotFound,
-    #[error("Window ID did not downcast to a valid element")]
     WindowIDNoDowncast,
 }
 
+impl fmt::Display for Error {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(target_os = "linux")]
+        {
+            if let Self::Flutter(ref flutter) = self {
+                return fmt::Display::fmt(flutter, f);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            if let Self::Porc(ref porc) = self {
+                return fmt::Display::fmt(porc, f);
+            }
+        }
+
+        match self {
+            Self::StaticMsg(s) => f.pad(s),
+            Self::TryFromInt(ref i) => fmt::Display::fmt(i, f),
+            Self::WindowNotFound => f.pad("Unable to find window in window mappings"),
+            Self::KeysymNotFound => f.pad("Unable to find key symbol corresponding to input"),
+            Self::WindowIDNoDowncast => f.pad("Window ID did not downcast to a valid element"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<FlutterbugError> for Error {
+    #[inline]
+    fn from(fe: FlutterbugError) -> Self {
+        Self::Flutter(fe)
+    }
+}
+
+#[cfg(windows)]
+impl From<PorcupineError> for Error {
+    #[inline]
+    fn from(p: PorcupineError) -> Self {
+        Self::Porc(p)
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    #[inline]
+    fn from(tfie: TryFromIntError) -> Self {
+        Self::TryFromInt(tfie)
+    }
+}
+
 /// Result type that returns beetle::Error to make things more conveinent.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;

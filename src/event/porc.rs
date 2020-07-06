@@ -44,7 +44,10 @@
  */
 
 use super::{Event, EventType};
+use alloc::{boxed::Box, sync::Arc, vec};
 use crate::{Instance, KeyInfo, KeyType, Window};
+use core::{convert::TryInto, mem, ptr, sync::atomic::AtomicPtr};
+use cty::c_int;
 use euclid::default::{Point2D, Rect, Size2D};
 use porcupine::{
     prelude::*,
@@ -57,14 +60,6 @@ use porcupine::{
     },
 };
 use smallvec::SmallVec;
-use std::{
-    boxed::Box,
-    convert::TryInto,
-    mem,
-    os::raw::c_int,
-    ptr,
-    sync::{atomic::AtomicPtr, Arc},
-};
 
 const OLD_BOUNDS_NOT_FOUND: &'static str = "Old bounds were not stored in the window object.";
 

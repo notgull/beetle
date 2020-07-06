@@ -45,10 +45,11 @@
 
 use super::{Event, EventType};
 use crate::{Instance, KeyInfo, KeyType, MouseButton, Window};
+use alloc::{sync::Arc, vec};
+use core::convert::TryInto;
 use euclid::default::Point2D;
 use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};
 use smallvec::SmallVec;
-use std::{convert::TryInto, sync::Arc};
 
 impl Event {
     /// Translate a Flutterbug event to a Beetle event.
@@ -61,7 +62,7 @@ impl Event {
         let mut evs = SmallVec::new();
         let ty = fev.kind();
         let assoc_window: Window = match instance.flutterbug_get_window(fev.window()) {
-            Some(w) => (*w).clone(),
+            Some(w) => w,
             None => {
                 // we don't care about this event, just return nothing
                 log::warn!("Found event without a corresponding window: {:?}", fev);
@@ -75,7 +76,7 @@ impl Event {
             // X11 events involving a key press
             FEvent::Key(k) => {
                 // get the key information from the event
-                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.ic())?;
+                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.inner_window().ic())?;
                 let mut ki = KeyInfo::new(KeyType::from_keysym(
                     ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
                 ));

@@ -45,6 +45,7 @@
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
 use crate::{take_vec::TakeVec, Event, EventType, Instance, Texture};
+use alloc::string::{String, ToString};
 use euclid::default::Rect;
 use porcupine::{
     prelude::*,
