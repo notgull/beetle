@@ -83,28 +83,19 @@ impl GenericWindowInternal for WindowInternal {
         // create the struct representing the internal flutterbug window
         let dpy = instance.display();
         // TODO: let's not duplicate code here
-        let inner = match parent {
-            Some(ref p) => {
-                let mut p2 = p.inner_window();
+        let mut inner_win = parent.map(|p| p.inner_window());
 
-                dpy.create_simple_window(
-                    Some(p2.inner_flutter_window()),
-                    Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
-                    bounds.size,
-                    1,
-                    dpy.default_white_pixel()?,
-                    dpy.default_white_pixel()?,
-                )
-            }
-            None => dpy.create_simple_window(
-                None,
-                Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
-                bounds.size,
-                1,
-                dpy.default_white_pixel()?,
-                dpy.default_white_pixel()?,
-            ),
-        }?;
+        let inner = dpy.create_simple_window(
+            match inner_win {
+                None => None,
+                Some(ref mut l) => Some(l.inner_flutter_window()),
+            },
+            Point2D::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?),
+            bounds.size,
+            1,
+            dpy.default_white_pixel()?,
+            dpy.default_white_pixel()?,
+        )?;
 
         inner.set_protocols(&mut [instance.delete_window_atom()])?;
         inner.store_name(&text)?;

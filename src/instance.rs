@@ -70,6 +70,8 @@ struct InstanceInternal {
 
     #[cfg(windows)]
     window_mappings: Mutex<HashMap<usize, Window>>,
+    #[cfg(windows)]
+    next_events: Mutex<SmallVec<[crate::Result<SmallVec<[Event; 2]>>; 1]>>,
 }
 
 /// An instance of the Beetle GUI window factory.
@@ -145,6 +147,43 @@ impl Instance {
     pub fn queue_events<I: IntoIterator<Item = Event>>(&self, evs: I) {
         let mut evq = self.0.event_queue.lock();
         evs.into_iter().for_each(|e| evq.push_back(e));
+    }
+
+    /// Get the next event.
+    #[inline]
+    pub fn next_event(&self) -> crate::Result<Event> {
+        #[inline]
+        fn hold_for_events(this: &Instance) -> crate::Result<SmallVec<[Event; 2]>> {
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "linux")] {
+                    Event::from_flutter(this, flutterbug::Event::next(&this.0.connection)?)
+                } else if #[cfg(windows)] {
+                    this.porcupine_hold_for_events()
+                } else {
+                    unimplemented!()
+                }
+            }
+        }
+
+        let mut evq = self.0.event_queue.lock(); 
+        match evq.pop_front() {
+            Some(ev) => Ok(ev),
+            None => {
+                mem::drop(evq); // hold_for_events might need the mutex
+
+                // hold for the next event
+                let mut ne: Option<Event> = None;
+                while ne.is_none() {
+                    let mut new_evs = hold_for_events(self)?;
+                    let mut drain = new_evs.drain(..).filter(|e| e.window().receives_event(&e.ty()));
+                    let mut evq = self.0.event_queue.lock();
+
+                    ne = drain.next();
+                    drain.for_each(|ev| evq.push_back(ev));
+                }
+                Ok(ne.unwrap())
+            }
+        }
     }
 }
 
@@ -241,6 +280,7 @@ impl Instance {
         Ok(Self(Arc::new(InstanceInternal {
             event_queue: Mutex::new(VecDeque::new()),
             window_mappings: Mutex::new(HashMap::new()),
+            next_events: Mutex::new(SmallVec::new()),
         })))
     }
 
@@ -280,5 +320,39 @@ impl Instance {
         log::trace!("Accessing window by HWND {:p}", hwnd);
         let wm = self.0.window_mappings.lock();
         wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
+    }
+
+    #[inline]
+    pub(crate) fn porcupine_set_next_events(&self, ne: crate::Result<SmallVec<[Event; 2]>>) {
+        let mut l = self.0.next_events.lock();
+        l.push(ne);
+    }
+
+    #[inline]
+    pub(crate) fn porcupine_hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>> {
+        // run a single iteration of the message loop
+        if let Some(ref msg) = porcupine::get_message()? {
+            porcupine::translate_message(msg);
+            porcupine::dispatch_message(msg);
+        }
+
+        // drain the next_events variable into the event queue, save for the first element
+        let mut next_events = self.0.next_events.lock();
+        let mut drain = next_events.drain(..);
+        match drain.next() {
+            None => Ok(SmallVec::new()), // just return an empty SmallVec. This is just a stack allocation.
+            Some(evs) => {
+                // if the remaining length is 1 or more, drain it into the event queue
+                if drain.len() > 0 {
+                    let mut evq = self.0.event_queue.lock();
+                    drain.try_for_each::<_, crate::Result<()>>(|nevs| {
+                        nevs?.into_iter().for_each(|e| evq.push_back(e));
+                        Ok(())
+                    })?;
+                }
+
+                evs
+            }
+        }
     }
 }

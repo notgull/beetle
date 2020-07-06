@@ -44,8 +44,10 @@
  */
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
+use alloc::{boxed::Box, string::{String, ToString}, sync::Arc};
 use crate::{take_vec::TakeVec, Event, EventType, Instance, Texture};
-use alloc::string::{String, ToString};
+use core::{any::Any, convert::TryInto, mem, sync::atomic::AtomicPtr};
+use cty::c_int;
 use euclid::default::Rect;
 use porcupine::{
     prelude::*,
@@ -57,14 +59,6 @@ use porcupine::{
         um::winuser,
     },
     CmdShow, ExtendedWindowStyle, OwnedWindowClass, Window as PWindow, WindowClass, WindowStyle,
-};
-use std::{
-    any::Any,
-    boxed::Box,
-    convert::TryInto,
-    mem,
-    os::raw::c_int,
-    sync::{atomic::AtomicPtr, Arc},
 };
 
 // a window class that every instance of WindowInternal uses
@@ -121,6 +115,7 @@ impl GenericWindowInternal for WindowInternal {
             | WindowStyle::CAPTION;
 
         // create internal window
+        let mut l = parent.map(|p| p.inner_window());
         let mut pw = PWindow::with_creation_param(
             &BEETLE_WINDOW_CLASS,
             &text,
@@ -132,7 +127,10 @@ impl GenericWindowInternal for WindowInternal {
                 bounds.size.width.try_into()?,
                 bounds.size.height.try_into()?,
             ),
-            parent.map(|p| p.inner_porc_window()).as_deref(),
+            match l {
+                None => None,
+                Some(ref mut l) => Some(l.inner_porc_window()),
+            },
             Some(Box::new(instance.clone())),
         )?;
 

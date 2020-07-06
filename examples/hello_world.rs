@@ -71,7 +71,7 @@ fn deadlock_detector() {
 }
 
 fn main() -> Result<()> {
-    env::set_var("RUST_LOG", "beetle=error");
+    env::set_var("RUST_LOG", "beetle=trace");
     env_logger::init();
 
     deadlock_detector();
@@ -116,7 +116,7 @@ fn main() -> Result<()> {
         } else {
             event.dispatch()?;
         }
-    }
+    } 
 
     Ok(())
 }

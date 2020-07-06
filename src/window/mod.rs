@@ -282,7 +282,7 @@ impl Window {
 
     /// Handle an event.
     #[inline]
-    pub fn handle_event(&self, event: Event) -> crate::Result<()> {
+    pub fn handle_event(&self, event: &Event) -> crate::Result<()> {
         match event.ty() {
             EventType::BoundsChanging => {
                 let bools: (bool, bool) = *Arc::downcast(event.arguments()[2].clone()).unwrap();
@@ -292,33 +292,6 @@ impl Window {
                 self.set_text_internal((*event.new_text().unwrap()).clone())?
             }
             EventType::AboutToPaint => self.repaint(None)?,
-            EventType::MessageCarrier => {
-                // if this is win32, forward the message to the actual window
-                cfg_if::cfg_if! {
-                    if #[cfg(windows)] {
-                        // if any error occurs during this part, just drop it
-                        match (
-                            Arc::downcast::<UINT>(event.arguments()[0].clone()),
-                            Arc::downcast::<WPARAM>(event.arguments()[1].clone()),
-                            Arc::downcast::<LPARAM>(event.arguments()[2].clone()),
-                        ) {
-                            (Ok(m), Ok(w), Ok(l)) => unsafe {
-                                // in order to avoid a deadlock, we copy out the pointer
-                                let hwnd = self.inner_porc_window().hwnd().as_ptr();
-
-                                winuser::DefWindowProcA(
-                                    hwnd,
-                                    *m,
-                                    *w,
-                                    *l,
-                                );
-                            },
-                            _ => (),
-                        }
-                    }
-                }
-            }
-
             _ => { /* do nothing */ }
         }
 
@@ -328,7 +301,7 @@ impl Window {
         #[cfg(debug_assertions)]
         defer!(log::trace!("Unlocked mutex for \"handle_event\""));
 
-        l.handle_event(&event)
+        l.handle_event(event)
     }
 
     /// Handle an event before it gets sent into the event loop for the user.
@@ -435,6 +408,7 @@ impl Window {
         let old_bounds = l.set_bounds(bounds, backend)?;
 
         if enqueue {
+            log::trace!("Queueing new BoundsChanged event");
             self.instance.queue_event(Event::new(
                 self,
                 EventType::BoundsChanged,

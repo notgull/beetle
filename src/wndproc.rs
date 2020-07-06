@@ -92,9 +92,7 @@ pub unsafe extern "system" fn beetle_wndproc(
      *     Window pointer (and thus, the instance pointer) from GWLP_USERDATA. After doing
      *     some win32-esque checks (such as checking for close), we will call the Event::from_porc
      *     function to generate a list of Beetle events.
-     * 4). Instance::porcupine_store_next_events() will be called to store the results.
-     * 5). At this point, the window procedure will exit and DispatchMessage will return.
-     *     The instance will retrieve the next events from the next_events field.
+     * 4). New events will be pushed into the Instance.
      */
 
     // if this is not a window, return
@@ -106,7 +104,7 @@ pub unsafe extern "system" fn beetle_wndproc(
     // set the window part in WC_NCCREATE
     if msg == WM_NCCREATE {
         let create_struct_ptr = mem::transmute::<LPARAM, LPCREATESTRUCTA>(lparam);
-        let window_object_ptr = (*create_struct_ptr).lpCreateParams as *mut dyn Any;
+        let window_object_ptr = (*create_struct_ptr).lpCreateParams;
 
         // if we're in debug mode, check to ensure that we have an actual Window here
         #[cfg(debug_assertions)]
@@ -125,14 +123,16 @@ pub unsafe extern "system" fn beetle_wndproc(
             GWLP_USERDATA,
             window_object_ptr as *const () as LONG_PTR,
         );
-        return TRUE as LRESULT;
+        
+        //return TRUE as LRESULT;
+        return DefWindowProcA(hwnd, msg, wparam, lparam);
     }
 
-    // get the pointer
-    let window = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
+    // get the pointer to the instance
+    let instance = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
 
     // if the pointer is null, just return
-    if window == 0 {
+    if instance == 0 {
         // if there was an error, delete the error part
         let err = errhandlingapi::GetLastError();
         if err == 1812 {
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn beetle_wndproc(
     }
 
     // transmute to a reference to the window
-    let instance = mem::transmute::<LONG_PTR, *const Instance>(window);
+    let instance = mem::transmute::<LONG_PTR, *const Instance>(instance);
     let instance: &Instance = &*instance;
 
     let window = match instance.porcupine_get_window(hwnd) {
@@ -185,29 +185,13 @@ pub unsafe extern "system" fn beetle_wndproc(
                 return 0;
             }
         }
-        WM_PAINT => {
-            // if the background for us is None, we can just paint
-            // the default background here
-            if let None = window.background() {
-                let mut ps: MaybeUninit<PAINTSTRUCT> = MaybeUninit::uninit();
-                let hdc = BeginPaint(hwnd, ps.as_mut_ptr());
-                let mut ps = ps.assume_init();
-
-                FillRect(
-                    hdc,
-                    &ps.rcPaint,
-                    mem::transmute::<usize, HBRUSH>(COLOR_WINDOW as usize + 1),
-                );
-                EndPaint(hwnd, &mut ps);
-            }
-        }
         _ => (),
     }
 
     // get the events and set the instance's buffer
     let events = Event::from_porc(instance, window, msg, wparam, lparam);
-    instance.porcupine_set_next_events(events);
+    instance.porcupine_set_next_events(events); // forward the error to the actual Rust part
 
-    // return
-    0
+    // just forward the event to DefWindowProcA now
+    DefWindowProcA(hwnd, msg, wparam, lparam)
 }

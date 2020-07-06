@@ -44,8 +44,8 @@
  */
 
 use super::{Event, EventType};
-use alloc::{boxed::Box, sync::Arc, vec};
 use crate::{Instance, KeyInfo, KeyType, Window};
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::{convert::TryInto, mem, ptr, sync::atomic::AtomicPtr};
 use cty::c_int;
 use euclid::default::{Point2D, Rect, Size2D};
@@ -94,6 +94,11 @@ impl Event {
             WM_CLOSE => {
                 log::debug!("Found WM_CLOSE message");
                 evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
+                if assoc_window.is_top_level() {
+                    let mut qm = Event::new(&assoc_window, EventType::Quit, vec![]);
+                    qm.set_is_exit_event(true);
+                    evs.push(qm);
+                }
             }
             WM_PAINT => {
                 log::debug!("Found WM_PAINT message");
@@ -110,7 +115,7 @@ impl Event {
                 where
                     F: FnOnce(&mut KeyInfo),
                 {
-                    if unsafe { GetKeyState(test_for) } & std::i16::MAX != 0 {
+                    if unsafe { GetKeyState(test_for) } & core::i16::MAX != 0 {
                         setter(ki);
                     }
                 }
@@ -119,9 +124,12 @@ impl Event {
                 set_key_state(&mut ki, VK_MENU, |ki| ki.set_alt(true));
                 set_key_state(&mut ki, VK_SHIFT, |ki| ki.set_shift(true));
 
-                let loc: Option<Point2D<u32>> = match porcupine::cursor_pos()
-                    .and_then(|f| assoc_window.inner_porc_window().screen_to_client(f))
-                {
+                let loc: Option<Point2D<u32>> = match porcupine::cursor_pos().and_then(|f| {
+                    assoc_window
+                        .inner_window()
+                        .inner_porc_window()
+                        .screen_to_client(f)
+                }) {
                     Err(e) => {
                         // if an error occurred, just drop it and set loc to None
                         log::error!("Error finding position on screen: {}", e);
@@ -187,15 +195,6 @@ impl Event {
                 log::debug!("Unsupported message.");
             }
         }
-
-        // also push an event that "carries" the message
-        evs.push(Event::new(
-            &assoc_window,
-            EventType::MessageCarrier,
-            vec![Arc::new(msg), Arc::new(wparam), Arc::new(lparam)],
-        ));
-
-        log::debug!("Queueing events: {:?}", &evs);
 
         Ok(evs)
     }

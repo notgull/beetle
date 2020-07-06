@@ -210,9 +210,8 @@ impl Event {
 
     /// Dispatch its event to the system handling source.
     #[inline]
-    pub fn dispatch(self) -> crate::Result<()> {
-        let win = self.target_window.clone();
-        win.handle_event(self)
+    pub fn dispatch(&self) -> crate::Result<()> {
+        self.window().handle_event(self)
     }
 
     /// Tell if the event requires the application to exit.
