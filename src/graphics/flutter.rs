@@ -69,11 +69,12 @@ impl FlutterbugGraphics {
         let dpy = window
             .inner_window()?
             .inner_flutter_window()
-            .display_reference();
+            .display_reference()
+            .clone();
 
         Ok(Self {
             window: window.clone(),
-            dpy: dpy.clone(),
+            dpy,
         })
     }
 
@@ -84,7 +85,7 @@ impl FlutterbugGraphics {
 
         // if it's not already in the color mapping, run it through the colormap
         // of the display
-        match clr_mapping.get(color) {
+        match clr_mapping.get(&color) {
             Some(fl) => Ok(*fl),
             None => {
                 // convert a float to a ushort
@@ -99,12 +100,12 @@ impl FlutterbugGraphics {
                 clr_mapping.insert(
                     color,
                     clrmap.color(FlColor::Rgb {
-                        r: f2us!(color.r),
-                        g: f2us!(color.g),
-                        b: f2us!(color.b),
-                    }),
+                        r: f2us!(color.r()),
+                        g: f2us!(color.g()),
+                        b: f2us!(color.b()), // TODO; account for alpha
+                    })?,
                 );
-                Ok(*clr_mapping.get(color).unwrap())
+                Ok(*clr_mapping.get(&color).unwrap())
             }
         }
     }
@@ -116,12 +117,17 @@ impl FlutterbugGraphics {
 impl InternalGraphics for FlutterbugGraphics {
     fn set_foreground(&self, clr: Color) -> crate::Result<()> {
         let inner = self.window.inner_window()?;
-        inner.inner_flutter_window().set_foreground(self.to_flcolor(clr))?;
+        inner
+            .inner_flutter_window()
+            .set_foreground(self.to_flcolor(clr)?)?;
         Ok(())
     }
 
     fn set_background(&self, clr: Color) -> crate::Result<()> {
-        self.window.inner_window()?.inner_flutter_window().set_foreground(self.to_flcolor(clr))?;
+        self.window
+            .inner_window()?
+            .inner_flutter_window()
+            .set_foreground(self.to_flcolor(clr)?)?;
         Ok(())
     }
 
@@ -131,7 +137,10 @@ impl InternalGraphics for FlutterbugGraphics {
         let y1: i32 = p1.y.try_into()?;
         let y2: i32 = p2.y.try_into()?;
 
-        self.window.inner_window().inner_flutter_window().draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
+        self.window
+            .inner_window()?
+            .inner_flutter_window()
+            .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
         Ok(())
     }
 }

@@ -46,6 +46,7 @@
 use core::{fmt, num::TryFromIntError};
 #[cfg(target_os = "linux")]
 use flutterbug::FlutterbugError;
+use ordered_float::FloatIsNan;
 #[cfg(windows)]
 use porcupine::Error as PorcupineError;
 
@@ -58,6 +59,7 @@ pub enum Error {
     #[cfg(windows)]
     Porc(PorcupineError),
     TryFromInt(TryFromIntError),
+    NanFound(FloatIsNan),
 
     WindowNotFound,
     KeysymNotFound,
@@ -91,6 +93,7 @@ impl fmt::Display for Error {
             Self::WindowIDNoDowncast => f.pad("Window ID did not downcast to a valid element"),
             Self::UnableToWrite => f.pad("Unable to write to RwLock"),
             Self::UnableToRead => f.pad("Unable to read from RwLock"),
+            Self::NanFound(ref n) => fmt::Display::fmt(n, f),
             _ => unreachable!(),
         }
     }
@@ -116,6 +119,13 @@ impl From<TryFromIntError> for Error {
     #[inline]
     fn from(tfie: TryFromIntError) -> Self {
         Self::TryFromInt(tfie)
+    }
+}
+
+impl From<FloatIsNan> for Error {
+    #[inline]
+    fn from(fin: FloatIsNan) -> Self {
+        Self::NanFound(fin)
     }
 }
 

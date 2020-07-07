@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{Event, EventType};
+use super::{Event, EventData};
 use crate::{Instance, KeyInfo, KeyType, Window};
 use alloc::{boxed::Box, sync::Arc, vec};
 use core::{convert::TryInto, mem, ptr, sync::atomic::AtomicPtr};
@@ -93,16 +93,19 @@ impl Event {
         match msg {
             WM_CLOSE => {
                 log::debug!("Found WM_CLOSE message");
-                evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
+                evs.push(Event::new(&assoc_window, EventData::Close));
                 if assoc_window.is_top_level()? {
-                    let mut qm = Event::new(&assoc_window, EventType::Quit, vec![]);
+                    let mut qm = Event::new(&assoc_window, EventData::Quit);
                     qm.set_is_exit_event(true);
                     evs.push(qm);
                 }
             }
             WM_PAINT => {
                 log::debug!("Found WM_PAINT message");
-                evs.push(Event::new(&assoc_window, EventType::Paint, vec![]));
+                evs.push(Event::new(
+                    &assoc_window,
+                    EventData::Paint(crate::Graphics::from_window(&assoc_window)?),
+                ));
             }
             // for all intents and purposes these are the same thing
             WM_KEYUP | WM_SYSKEYUP | WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -148,31 +151,30 @@ impl Event {
                 evs.push(Event::new(
                     &assoc_window,
                     match msg {
-                        WM_KEYUP | WM_SYSKEYUP => EventType::KeyUp,
-                        WM_KEYDOWN | WM_SYSKEYDOWN => EventType::KeyDown,
+                        WM_KEYUP | WM_SYSKEYUP => EventData::KeyUp(ki, loc),
+                        WM_KEYDOWN | WM_SYSKEYDOWN => EventData::KeyDown(ki, loc),
                         _ => unreachable!(),
                     },
-                    vec![Arc::new(ki), Arc::new(loc)],
                 ));
             }
             WM_WINDOWPOSCHANGING => {
                 let new_bounds = get_newbounds(lparam)?;
-                let old_bounds = assoc_window.bounds();
+                let old_bounds = assoc_window.bounds()?;
 
                 // make sure to store the bounds
                 assoc_window.store_old_bounds()?;
 
                 // the (false, false) asserts that it's from the event loop and that a BoundsChanged event
                 // should not be emitted
-                evs.push(Event::new(
+                let mut ev = Event::new(
                     &assoc_window,
-                    EventType::BoundsChanging,
-                    vec![
-                        Arc::new(old_bounds),
-                        Arc::new(new_bounds),
-                        Arc::new((false, false)),
-                    ],
-                ));
+                    EventData::BoundsChanging {
+                        old: old_bounds,
+                        new: new_bounds,
+                    },
+                );
+                ev.set_hidden_data((false, false));
+                evs.push(ev);
             }
             WM_WINDOWPOSCHANGED => {
                 log::debug!("Found WM_WINDOWPOSCHANGED");
@@ -188,8 +190,10 @@ impl Event {
 
                 evs.push(Event::new(
                     &assoc_window,
-                    EventType::BoundsChanged,
-                    vec![Arc::new(old_bounds), Arc::new(new_bounds)],
+                    EventData::BoundsChanged {
+                        old: old_bounds,
+                        new: new_bounds,
+                    },
                 ));
             }
             _ => {

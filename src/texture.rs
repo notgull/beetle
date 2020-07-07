@@ -57,6 +57,7 @@ pub enum Texture {
 impl fmt::Debug for Texture {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "std")]
         if let Texture::Image(ref i) = self {
             return f.pad("Image");
         }

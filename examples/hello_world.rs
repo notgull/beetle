@@ -43,7 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use beetle::{EventType, Instance, Result};
+use beetle::{EventData, EventType, Instance, Result};
 use euclid::rect;
 use std::{env, time::Duration, thread};
 
@@ -92,19 +92,16 @@ fn main() -> Result<()> {
         let event = instance.next_event()?;
 
         // do something if this is a mouse event
-        match event.ty() {
-            EventType::Paint => println!("Repainting window."),
-            EventType::MouseButtonDown => {
-                let coords = event.click_location().unwrap();
+        match event.data() {
+            EventData::Paint(_g) => println!("Repainting window."),
+            EventData::MouseButtonDown(coords, _button) => {
                 println!("Mouse click at ({}, {})", coords.x, coords.y);
             }
-            EventType::KeyDown => {
-                let key = event.key().unwrap();
-                println!("Key Information: {:?}", key);
+            EventData::KeyDown(keyinfo, _loc) => {
+                println!("Key Information: {:?}", keyinfo);
             }
-            EventType::BoundsChanged => {
-                let bounds = event.new_bounds().unwrap();
-                 println!("Bounds changed to: {}", bounds);
+            EventData::BoundsChanged { old: _, new } => {
+                println!("Bounds changed to: {}", new);
             }
             _ => ()
         }

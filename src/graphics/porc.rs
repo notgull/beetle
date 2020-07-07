@@ -42,3 +42,36 @@
  * limitations under the License.
  * ----------------------------------------------------------------------------------
  */
+
+use super::InternalGraphics;
+use crate::{Color, Window};
+use euclid::default::Point2D;
+use porcupine::{prelude::*, DeviceContext};
+
+#[repr(transparent)]
+pub struct PorcupineGraphics(DeviceContext);
+
+impl PorcupineGraphics {
+    #[inline]
+    pub fn new(wnd: &Window) -> crate::Result<Self> {
+        Ok(Self(wnd.inner_window()?.inner_porc_window().begin_paint()?))
+    }
+}
+
+// drop should automatically end the paint
+
+impl InternalGraphics for PorcupineGraphics {
+    fn set_foreground(&self, clr: Color) -> crate::Result<()> {
+        // TODO: create a new pen with the specified color
+        unimplemented!()
+    }
+
+    fn set_background(&self, clr: Color) -> crate::Result<()> {
+        // TODO: create a new brush with the specified color
+        unimplemented!()
+    }
+
+    fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()> {
+        unimplemented!()
+    }
+}

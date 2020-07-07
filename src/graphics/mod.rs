@@ -124,6 +124,8 @@ impl Graphics {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
                 Ok(Self(GraphicsStorage::Flutter(FlutterbugGraphics::new(window)?)))
+            } else if #[cfg(windows)] {
+                Ok(Self(GraphicsStorage::Porc(PorcupineGraphics::new(window)?)))
             } else {
                 unimplemented!()
             }

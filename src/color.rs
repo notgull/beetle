@@ -47,28 +47,60 @@ use core::{
     hash::{Hash, Hasher},
     mem,
 };
+use ordered_float::NotNan;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    r: NotNan<f32>,
+    g: NotNan<f32>,
+    b: NotNan<f32>,
+    a: NotNan<f32>,
 }
 
-impl Hash for Color {
+impl Color {
+    /// Create a new color. This function checks for NaN values, and returns an error if it finds one.
     #[inline]
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        macro_rules! hash_f32 {
-            ($self: ident, $h: ident, $fname: ident) => {{
-                let bytes = $self.$fname.to_ne_bytes();
-                h.write(&bytes);
-            }};
-        }
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> crate::Result<Self> {
+        Ok(Self {
+            r: NotNan::new(r)?,
+            g: NotNan::new(g)?,
+            b: NotNan::new(b)?,
+            a: NotNan::new(a)?,
+        })
+    }
 
-        hash_f32!(self, h, r);
-        hash_f32!(self, h, g);
-        hash_f32!(self, h, b);
-        hash_f32!(self, h, a);
+    /// Create a new color without checking for NaN values.
+    #[inline]
+    pub unsafe fn new_no_nan_check(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self {
+            r: NotNan::unchecked_new(r),
+            g: NotNan::unchecked_new(g),
+            b: NotNan::unchecked_new(b),
+            a: NotNan::unchecked_new(a),
+        }
+    }
+
+    /// Get the red component of this color.
+    #[inline]
+    pub fn r(&self) -> f32 {
+        self.r.into_inner()
+    }
+
+    /// Get the green component of this color.
+    #[inline]
+    pub fn g(&self) -> f32 {
+        self.g.into_inner()
+    }
+
+    /// Get the blue component of this color.
+    #[inline]
+    pub fn b(&self) -> f32 {
+        self.b.into_inner()
+    }
+
+    /// Get the alpha component of this color.
+    #[inline]
+    pub fn a(&self) -> f32 {
+        self.a.into_inner()
     }
 }

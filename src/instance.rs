@@ -252,8 +252,7 @@ impl Instance {
         background: Option<Texture>,
         is_top_level: bool,
     ) -> crate::Result<Window> {
-        let mut cw =
-            crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
+        let cw = crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
         let id = cw.id();
         let ex_id = cw.inner_flutter_window().window();
 
