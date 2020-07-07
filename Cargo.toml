@@ -19,6 +19,7 @@ hashbrown = "0.8"
 maybe-uninit = "2"
 # TODO: remove deadlock detector unless we need it
 parking_lot = { version = "0.10", features = ["nightly", "deadlock_detection"], optional = true }
+ordered-float = { version = "1.1", default-features = false}
 smallvec = "1.4"
 scopeguard = "1.1"
 spin = "0.5"
@@ -34,7 +35,7 @@ flutterbug = { version = "0.1.1" }
 
 [features]
 default = ["std"]
-std = ["parking_lot", "image"]
+std = ["parking_lot", "image", "ordered-float/std"]
 
 [badges]
 appveyor = { repository = "not-a-seagull/beetle", branch = "master", service = "github" }

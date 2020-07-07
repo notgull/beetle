@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/color.rs - A basic structure for colors.
+ * src/graphics/porc.rs - Graphics framework that hooks up to Porcupine.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -42,33 +42,3 @@
  * limitations under the License.
  * ----------------------------------------------------------------------------------
  */
-
-use core::{
-    hash::{Hash, Hasher},
-    mem,
-};
-
-#[derive(Debug, Copy, Clone)]
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
-}
-
-impl Hash for Color {
-    #[inline]
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        macro_rules! hash_f32 {
-            ($self: ident, $h: ident, $fname: ident) => {{
-                let bytes = $self.$fname.to_ne_bytes();
-                h.write(&bytes);
-            }};
-        }
-
-        hash_f32!(self, h, r);
-        hash_f32!(self, h, g);
-        hash_f32!(self, h, b);
-        hash_f32!(self, h, a);
-    }
-}

@@ -45,7 +45,7 @@
 
 use crate::{
     mutexes::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    Event, EventType, Instance, Texture,
+    Event, EventData, EventType, Instance, Texture,
 };
 use alloc::{
     string::{String, ToString},
@@ -81,7 +81,7 @@ pub use internal::EventHandler;
 pub(crate) use internal::*;
 
 // event types that are allowed no matter what
-const DEFAULT_EVENTS: [EventType; 12] = [
+const DEFAULT_EVENTS: [EventType; 11] = [
     EventType::NoOp,
     EventType::AboutToPaint,
     EventType::Paint,
@@ -93,7 +93,6 @@ const DEFAULT_EVENTS: [EventType; 12] = [
     EventType::BoundsChanged,
     EventType::BackgroundChanging,
     EventType::BackgroundChanged,
-    EventType::MessageCarrier,
 ];
 
 /// A rectangle of pixels on the screen, in the most basic terms. This structure is actually
@@ -250,8 +249,10 @@ impl Window {
 
         self.instance.queue_event(Event::new(
             self,
-            EventType::TextChanging,
-            vec![Arc::new(l.text().to_string()), Arc::new(text)],
+            EventData::TextChanging {
+                old: l.text().to_string(),
+                new: text,
+            },
         ));
         Ok(())
     }
@@ -268,11 +269,13 @@ impl Window {
             "Unlocked write access for \"set_text_internal\""
         ));
 
-        let cloned_text = Arc::new(text.clone());
+        let cloned_text = text.clone();
         self.instance.queue_event(Event::new(
             self,
-            EventType::TextChanged,
-            vec![Arc::new(l.set_text(text)?), cloned_text],
+            EventData::TextChanged {
+                old: l.set_text(text)?,
+                new: cloned_text,
+            },
         ));
         Ok(())
     }
@@ -300,15 +303,13 @@ impl Window {
     /// Handle an event.
     #[inline]
     pub fn handle_event(&self, event: &Event) -> crate::Result<()> {
-        match event.ty() {
-            EventType::BoundsChanging => {
-                let bools: (bool, bool) = *Arc::downcast(event.arguments()[2].clone()).unwrap();
-                self.set_bounds_internal(*event.new_bounds().unwrap(), bools.0, bools.1)?
+        match event.data() {
+            EventData::BoundsChanging { ref old, ref new } => {
+                let bools = *event.hidden_data::<(bool, bool)>().unwrap();
+                self.set_bounds_internal(*new, bools.0, bools.1)?
             }
-            EventType::TextChanging => {
-                self.set_text_internal((*event.new_text().unwrap()).clone())?
-            }
-            EventType::AboutToPaint => self.repaint(None)?,
+            EventData::TextChanging { ref old, ref new } => self.set_text_internal(new.clone())?,
+            EventData::AboutToPaint => self.repaint(None)?,
             _ => { /* do nothing */ }
         }
 
@@ -322,26 +323,6 @@ impl Window {
         defer!(log::trace!("Unlocked read access for \"handle_event\""));
 
         l.handle_event(event)
-    }
-
-    /// Handle an event before it gets sent into the event loop for the user.
-    #[inline]
-    pub fn prehandle_event(&self, event: &Event) -> crate::Result<()> {
-        match event.ty() {
-            EventType::Paint => {
-                if let Some(background) = self
-                    .inner
-                    .try_read()
-                    .ok_or_else(|| crate::Error::UnableToRead)?
-                    .background()
-                {
-                    // TODO: paint texture for window
-                }
-            }
-            _ => (),
-        }
-
-        Ok(())
     }
 
     /// Get the background for this window.
@@ -358,6 +339,8 @@ impl Window {
             .ok_or_else(|| crate::Error::UnableToRead)?;
         match l.background() {
             None => Ok(None),
+            // Note: the unwrap() here will never panic. The read guard prevents write
+            //       access to the background
             Some(_b) => Ok(Some(RwLockReadGuard::map(l, |l| l.background().unwrap()))),
         }
     }
@@ -452,8 +435,10 @@ impl Window {
             log::trace!("Queueing new BoundsChanged event");
             self.instance.queue_event(Event::new(
                 self,
-                EventType::BoundsChanged,
-                vec![Arc::new(old_bounds), Arc::new(bounds)],
+                EventData::BoundsChanged {
+                    old: old_bounds,
+                    new: bounds,
+                },
             ));
         }
         Ok(())
@@ -473,17 +458,19 @@ impl Window {
         #[cfg(debug_assertions)]
         defer!(log::trace!("Unlocked read access for \"set_bounds\""));
 
-        self.instance.queue_event(Event::new(
+        let mut ev = Event::new(
             self,
-            EventType::BoundsChanging,
-            // Note: The Arc((true, true)) at the end tells the event handler to both
-            // set this on the X11 backend and release a BoundsChanged event
-            vec![
-                Arc::new(l.bounds()),
-                Arc::new(bounds),
-                Arc::new((true, true)),
-            ],
-        ));
+            EventData::BoundsChanging {
+                old: l.bounds(),
+                new: bounds,
+            },
+        );
+
+        // Note: The (true, true) tells the event handler to both
+        // set this on the X11 backend and release a BoundsChanged event
+        ev.set_hidden_data((true, true));
+        self.instance.queue_event(ev);
+
         Ok(())
     }
 
@@ -493,8 +480,8 @@ impl Window {
         #[cfg(debug_assertions)]
         log::trace!("Locked write_access for \"show\"");
 
-        // Win32 Note: show() calls the window proc, which needs access to the mutex, which causes
-        // a deadlock. To circumvent this, we call show() and update() manually
+        // Win32 Note: show() calls the window proc, which needs write access to the lock, which causes
+        // an error. To circumvent this, we call show() and update() manually
 
         cfg_if::cfg_if! {
             if #[cfg(windows)] {

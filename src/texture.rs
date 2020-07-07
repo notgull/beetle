@@ -44,6 +44,7 @@
  */
 
 use crate::Color;
+use core::fmt;
 #[cfg(feature = "std")]
 use image::DynamicImage;
 
@@ -51,4 +52,18 @@ pub enum Texture {
     Color(Color),
     #[cfg(feature = "std")]
     Image(DynamicImage),
+}
+
+impl fmt::Debug for Texture {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Texture::Image(ref i) = self {
+            return f.pad("Image");
+        }
+
+        match self {
+            Texture::Color(ref c) => f.debug_tuple("Color").field(c).finish(),
+            _ => Err(fmt::Error),
+        }
+    }
 }

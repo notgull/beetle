@@ -43,8 +43,8 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{KeyInfo, MouseButton, Window};
-use alloc::{string::String, sync::Arc, vec::Vec};
+use crate::{Graphics, KeyInfo, MouseButton, Texture, Window};
+use alloc::{string::String, sync::Arc, vec, vec::Vec};
 use core::{any::Any, fmt, option::Option};
 use euclid::default::{Point2D, Rect};
 
@@ -86,19 +86,86 @@ pub enum EventType {
     MouseButtonDown,
     /// The window has had a mouse button released on it.
     MouseButtonUp,
-    /// A carrier for a Win32 message.
-    MessageCarrier,
     /// A manual, integer event.
     Integer(usize),
     /// A manual, string event.
     Str(&'static str),
 }
 
+/// Types of data deployed from Beetle.
+#[derive(Debug)]
+pub enum EventData {
+    /// Nothing is happening. Often used as a transport for event data.
+    NoOp,
+    /// A key has been pressed.
+    KeyDown(KeyInfo, Option<Point2D<u32>>),
+    /// A key has been released.
+    KeyUp(KeyInfo, Option<Point2D<u32>>),
+    /// The window is about to be repainted.
+    AboutToPaint,
+    /// The window is being repainted.
+    Paint(Graphics),
+    /// The text of a window is currently changing.
+    TextChanging { old: String, new: String },
+    /// The text of a window has been changed.
+    TextChanged { old: String, new: String },
+    /// The application is closing.
+    Quit,
+    /// A single window is closing.
+    Close,
+    /// The window's bounds are being changed.
+    BoundsChanging { old: Rect<u32>, new: Rect<u32> },
+    /// The window's bounds have changed.
+    BoundsChanged { old: Rect<u32>, new: Rect<u32> },
+    /// The window's background is being changed.
+    BackgroundChanging {
+        old: Option<Texture>,
+        new: Option<Texture>,
+    },
+    /// The window's background has been changed.
+    BackgroundChanged,
+    /// The window has had a mouse button depressed on it.
+    MouseButtonDown(Point2D<u32>, MouseButton),
+    /// The window has had a mouse button released on it.
+    MouseButtonUp(Point2D<u32>, MouseButton),
+    /// A manual, integer event.
+    Integer(usize),
+    /// A manual, string event.
+    Str(&'static str),
+}
+
+impl EventData {
+    /// Get the type of the event from the data.
+    #[inline]
+    pub fn ty(&self) -> EventType {
+        match self {
+            EventData::NoOp => EventType::NoOp,
+            EventData::KeyDown(ref _k, ref _o) => EventType::KeyDown,
+            EventData::KeyUp(ref _k, ref _o) => EventType::KeyUp,
+            EventData::AboutToPaint => EventType::AboutToPaint,
+            EventData::Paint(ref _g) => EventType::Paint,
+            EventData::TextChanging { ref old, ref new } => EventType::TextChanging,
+            EventData::TextChanged { ref old, ref new } => EventType::TextChanged,
+            EventData::Quit => EventType::Quit,
+            EventData::Close => EventType::Close,
+            EventData::BoundsChanging { ref old, ref new } => EventType::BoundsChanging,
+            EventData::BoundsChanged { ref old, ref new } => EventType::BoundsChanged,
+            EventData::BackgroundChanging { ref old, ref new } => EventType::BackgroundChanging,
+            EventData::BackgroundChanged => EventType::BackgroundChanged,
+            EventData::MouseButtonDown(ref _p, ref _b) => EventType::MouseButtonDown,
+            EventData::MouseButtonUp(ref _p, ref _b) => EventType::MouseButtonUp,
+            EventData::Integer(id) => EventType::Integer(*id),
+            EventData::Str(id) => EventType::Str(id),
+        }
+    }
+}
+
 /// An event receieved from the event loop.
 pub struct Event {
     target_window: Window, // cloned reference
-    ty: EventType,
+    data: EventData,
     arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
+    hidden_data: Option<Arc<dyn Any + Send + Sync + 'static>>,
     needs_quit: bool,
 }
 
@@ -106,7 +173,7 @@ impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Event")
             .field("target_window", &self.target_window)
-            .field("ty", &self.ty)
+            .field("data", &self.data)
             .field("needs_quit", &self.needs_quit)
             .finish()
     }
@@ -115,97 +182,45 @@ impl fmt::Debug for Event {
 impl Event {
     /// Create a new event from its raw parts.
     #[inline]
-    pub fn new(
-        target_window: &Window,
-        ty: EventType,
-        arguments: Vec<Arc<dyn Any + Send + Sync + 'static>>,
-    ) -> Self {
+    pub fn new(target_window: &Window, data: EventData) -> Self {
         Self {
             target_window: target_window.clone(),
-            ty,
-            arguments,
+            data,
+            arguments: vec![],
+            hidden_data: None,
             needs_quit: false,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_hidden_data<T: Any + Send + Sync + 'static>(&mut self, data: T) {
+        self.hidden_data = Some(Arc::new(data));
+    }
+
+    #[inline]
+    pub(crate) fn hidden_data<T: Any + Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        match self.hidden_data {
+            None => None,
+            Some(ref hd) => Arc::downcast(hd.clone()).ok(),
         }
     }
 
     /// Get the type of the event.
     #[inline]
     pub fn ty(&self) -> EventType {
-        self.ty
+        self.data.ty()
+    }
+
+    /// Get the data of the event.
+    #[inline]
+    pub fn data(&self) -> &EventData {
+        &self.data
     }
 
     /// Get the window that this event targets.
     #[inline]
     pub fn window(&self) -> &Window {
         &self.target_window
-    }
-
-    /// Get the arguments used in this event.
-    #[inline]
-    pub fn arguments(&self) -> &[Arc<dyn Any + Send + Sync + 'static>] {
-        &self.arguments
-    }
-
-    /// Helper Function to downcast an Arc to get information regarding an event.
-    #[inline]
-    fn event_info<T: Any + Send + Sync + 'static>(
-        &self,
-        event_types: &[EventType],
-        index: usize,
-    ) -> Option<Arc<T>> {
-        if event_types.contains(&self.ty) {
-            Arc::downcast(self.arguments.get(index)?.clone()).ok()
-        } else {
-            None
-        }
-    }
-
-    /// If this is a KeyEvent, get the associated KeyInfo.
-    #[inline]
-    pub fn key(&self) -> Option<Arc<KeyInfo>> {
-        self.event_info(&[EventType::KeyDown, EventType::KeyUp], 0)
-    }
-
-    /// If this is a key event, get where the mouse was when the key was pressed, if applicable.
-    #[inline]
-    pub fn press_location(&self) -> Option<Arc<Option<Point2D<u32>>>> {
-        self.event_info(&[EventType::KeyDown, EventType::KeyUp], 1)
-    }
-
-    /// If this is a resize event, get the old size.
-    #[inline]
-    pub fn old_bounds(&self) -> Option<Arc<Rect<u32>>> {
-        self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 0)
-    }
-
-    /// If this is a resize event, get the new size.
-    #[inline]
-    pub fn new_bounds(&self) -> Option<Arc<Rect<u32>>> {
-        self.event_info(&[EventType::BoundsChanging, EventType::BoundsChanged], 1)
-    }
-
-    /// If this is a text change event, get the old text.
-    #[inline]
-    pub fn old_text(&self) -> Option<Arc<String>> {
-        self.event_info(&[EventType::TextChanging, EventType::TextChanged], 0)
-    }
-
-    /// If this is a text change event, get the new text.
-    #[inline]
-    pub fn new_text(&self) -> Option<Arc<String>> {
-        self.event_info(&[EventType::TextChanging, EventType::TextChanged], 1)
-    }
-
-    /// If this is a mouse button event, get the point where the mouse clicked.
-    #[inline]
-    pub fn click_location(&self) -> Option<Arc<Point2D<u32>>> {
-        self.event_info(&[EventType::MouseButtonUp, EventType::MouseButtonDown], 0)
-    }
-
-    /// If this is a mouse button event, get the button that has been clicked.
-    #[inline]
-    pub fn click_button(&self) -> Option<Arc<MouseButton>> {
-        self.event_info(&[EventType::MouseButtonUp, EventType::MouseButtonDown], 1)
     }
 
     /// Dispatch its event to the system handling source.

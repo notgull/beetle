@@ -1,4 +1,4 @@
-/* -----------------------------------------------------------------------------------
+/*
  * src/graphics/mod.rs - Graphics object and API.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
@@ -43,8 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+use crate::{Color, Window};
 use alloc::boxed::Box;
-use crate::Color;
+use core::fmt;
 use euclid::default::Point2D;
 
 #[cfg(target_os = "linux")]
@@ -52,16 +53,16 @@ mod flutter;
 #[cfg(windows)]
 mod porc;
 #[cfg(target_os = "linux")]
-use flutter::*
+pub(crate) use flutter::*;
 #[cfg(windows)]
-use porc::*;
+pub(crate) use porc::*;
 
 /// The internal graphics object. This is loaded into the Graphics object and used
 /// for its methods.
 pub trait InternalGraphics {
     /// Set the foreground color.
     fn set_foreground(&self, clr: Color) -> crate::Result<()>;
-    
+
     /// Set the background color.
     fn set_background(&self, clr: Color) -> crate::Result<()>;
 
@@ -72,13 +73,13 @@ pub trait InternalGraphics {
 // storage object for internal graphics object
 enum GraphicsStorage {
     #[cfg(target_os = "linux")]
-    Flutter(FlutterbugGraphics<flutterbug::Window>),
+    Flutter(FlutterbugGraphics),
     #[cfg(windows)]
     Porc(PorcupineGraphics),
     Other(Box<dyn InternalGraphics>),
 }
 
-impl GraphicsStorage { 
+impl GraphicsStorage {
     #[inline]
     fn graphics(&self) -> &dyn InternalGraphics {
         #[cfg(target_os = "linux")]
@@ -92,7 +93,7 @@ impl GraphicsStorage {
         }
 
         if let Self::Other(ref o) = self {
-            return o;
+            return &**o;
         }
 
         unimplemented!()
@@ -103,11 +104,30 @@ impl GraphicsStorage {
 #[repr(transparent)]
 pub struct Graphics(GraphicsStorage);
 
+impl fmt::Debug for Graphics {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad("Graphics")
+    }
+}
+
 impl Graphics {
     /// Create a new graphics object from an object implementing InternalGraphics.
     #[inline]
-    pub fn new<T: InternalGraphics>(internal: T) -> Graphics {
-        Self(GraphicsStorage::Other(Box::new(internal)))
+    pub fn new(internal: Box<dyn InternalGraphics>) -> Graphics {
+        Self(GraphicsStorage::Other(internal))
+    }
+
+    /// Create a graphics object based on a window.
+    #[inline]
+    pub fn from_window(window: &Window) -> crate::Result<Graphics> {
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "linux")] {
+                Ok(Self(GraphicsStorage::Flutter(FlutterbugGraphics::new(window)?)))
+            } else {
+                unimplemented!()
+            }
+        }
     }
 
     /// Get a reference to the internal graphics object.

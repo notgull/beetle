@@ -43,8 +43,8 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{Event, EventType};
-use crate::{Instance, KeyInfo, KeyType, MouseButton, Window};
+use super::{Event, EventData};
+use crate::{Graphics, Instance, KeyInfo, KeyType, MouseButton, Window};
 use alloc::{sync::Arc, vec};
 use core::convert::TryInto;
 use euclid::default::Point2D;
@@ -111,11 +111,10 @@ impl Event {
                 evs.push(Event::new(
                     &assoc_window,
                     match ty {
-                        FEventType::KeyPress => EventType::KeyDown,
-                        FEventType::KeyRelease => EventType::KeyUp,
+                        FEventType::KeyPress => EventData::KeyDown(ki, loc),
+                        FEventType::KeyRelease => EventData::KeyUp(ki, loc),
                         _ => unreachable!(),
                     },
-                    vec![Arc::new(ki), Arc::new(loc)],
                 ));
             }
             // Re-rendering of the window
@@ -126,23 +125,26 @@ impl Event {
                     euclid::rect(e.x().try_into()?, e.y().try_into()?, e.width(), e.height());
 
                 if old_bounds != new_bounds {
-                    // Note: The Arc((false, true)) at the end tells the event handler that
+                    // Note: The (false, true) at the end tells the event handler that
                     // this event was emitted by the event loop and not from the
                     // set_bounds function. It signals that the bounds change should
                     // not be forwarded to the X11 backend. The "true" is to tell the
                     // handler to enqueue the BoundsChanged event.
-                    evs.push(Event::new(
+                    let mut ev = Event::new(
                         &assoc_window,
-                        EventType::BoundsChanging,
-                        vec![
-                            Arc::new(old_bounds),
-                            Arc::new(new_bounds),
-                            Arc::new((false, true)),
-                        ],
-                    ));
+                        EventData::BoundsChanging {
+                            old: old_bounds,
+                            new: new_bounds,
+                        },
+                    );
+                    ev.set_hidden_data((false, true));
+                    evs.push(ev);
                 }
 
-                evs.push(Event::new(&assoc_window, EventType::Paint, vec![]));
+                evs.push(Event::new(
+                    &assoc_window,
+                    EventData::Paint(Graphics::from_window(&assoc_window)?),
+                ));
                 // TODO: create g-object
             }
             // Press/release of a mouse button
@@ -150,29 +152,24 @@ impl Event {
             FEvent::Button(b) => {
                 use flutterbug::x11::xlib::{Button1, Button2, Button3, Button4, Button5};
                 if let (Ok(x), Ok(y)) = (b.x().try_into(), b.y().try_into()) {
+                    let button = match b.button() {
+                        Button1 => MouseButton::Button1,
+                        Button2 => MouseButton::Button2,
+                        Button3 => MouseButton::Button3,
+                        Button4 => MouseButton::Button4,
+                        Button5 => MouseButton::Button5,
+                        _ => return Err(crate::Error::StaticMsg("Unexpected X11 mouse input")),
+                    };
+                    let loc = Point2D::<u32>::new(x, y);
+
                     evs.push(Event::new(
                         &assoc_window,
                         match b.kind() {
-                            FEventType::ButtonPress => EventType::MouseButtonDown,
-                            FEventType::ButtonRelease => EventType::MouseButtonUp,
+                            FEventType::ButtonPress => EventData::MouseButtonDown(loc, button),
+                            FEventType::ButtonRelease => EventData::MouseButtonUp(loc, button),
                             _ => unreachable!(),
                             // First element is the X/Y coordinates. Second is the mouse button pressed.
                         },
-                        vec![
-                            Arc::new(Point2D::<u32>::new(x, y)),
-                            Arc::new(match b.button() {
-                                Button1 => MouseButton::Button1,
-                                Button2 => MouseButton::Button2,
-                                Button3 => MouseButton::Button3,
-                                Button4 => MouseButton::Button4,
-                                Button5 => MouseButton::Button5,
-                                _ => {
-                                    return Err(crate::Error::StaticMsg(
-                                        "Unexpected X11 mouse input",
-                                    ))
-                                }
-                            }),
-                        ],
                     ));
                 }
             }
@@ -180,11 +177,11 @@ impl Event {
             FEvent::ClientMessage(c) => {
                 // Check if the client message corresponds to the pre-set delete window atom
                 if AsRef::<[Atom]>::as_ref(&c.data())[0] == instance.delete_window_atom() {
-                    evs.push(Event::new(&assoc_window, EventType::Close, vec![]));
+                    evs.push(Event::new(&assoc_window, EventData::Close));
 
                     // also send a quit event if this is the top-level window
                     if assoc_window.is_top_level()? {
-                        let mut quit_ev = Event::new(&assoc_window, EventType::Quit, vec![]);
+                        let mut quit_ev = Event::new(&assoc_window, EventData::Quit);
                         quit_ev.set_is_exit_event(true);
                         evs.push(quit_ev);
                     }
