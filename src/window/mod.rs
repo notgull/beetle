@@ -355,7 +355,7 @@ impl Window {
 
         #[cfg(debug_assertions)]
         log::trace!("Locked read access for \"receive_events\"");
-        let mut l = self
+        let l = self
             .inner
             .try_read()
             .ok_or_else(|| crate::Error::UnableToRead)?;

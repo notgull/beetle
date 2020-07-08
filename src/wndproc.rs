@@ -124,7 +124,6 @@ pub unsafe extern "system" fn beetle_wndproc(
             window_object_ptr as *const () as LONG_PTR,
         );
 
-        //return TRUE as LRESULT;
         return DefWindowProcA(hwnd, msg, wparam, lparam);
     }
 
@@ -184,7 +183,7 @@ pub unsafe extern "system" fn beetle_wndproc(
                 Ok(tl) => tl,
                 Err(e) => {
                     log::error!(
-                        "Unable to retrieve whether the window is top level: {:?}. Assuming that it isn't.", 
+                        "Unable to determine whether the window is top level: {}. Assuming that it isn't.", 
                         e
                     );
                     false

@@ -55,26 +55,42 @@ lazy_static::lazy_static! {
     static ref DPY_COLOR_MAPPING: Mutex<HashMap<Color, FlColor>> = Mutex::new(HashMap::new());
 }
 
+struct ColorInfo {
+    background: FlColor,
+    foreground: FlColor,
+}
+
 /// The graphics interface to a Flutterbug drawable object.
 pub struct FlutterbugGraphics {
     window: Window,
 
     // we need a reference to the display for its colormap
     dpy: DisplayReference,
+
+    // see below for why we need this
+    color_info: Mutex<ColorInfo>,
 }
 
 impl FlutterbugGraphics {
     #[inline]
     pub fn new(window: &Window) -> crate::Result<Self> {
-        let dpy = window
-            .inner_window()?
-            .inner_flutter_window()
-            .display_reference()
-            .clone();
+        let inner_window = window.inner_window()?;
+        let inner_flutter = inner_window.inner_flutter_window();
+        let dpy = inner_flutter.display_reference().clone();
+
+        // set the defaults
+        let black = dpy.default_black_pixel()?;
+        let white = dpy.default_white_pixel()?;
+        inner_flutter.set_foreground(black)?;
+        inner_flutter.set_background(white)?;
 
         Ok(Self {
             window: window.clone(),
             dpy,
+            color_info: Mutex::new(ColorInfo {
+                foreground: black,
+                background: white,
+            }),
         })
     }
 
@@ -110,8 +126,6 @@ impl FlutterbugGraphics {
         }
     }
 }
-
-// quick function to help convert a Color to the Beetle equivalent
 
 // most methods can just be forwarded to the inner flutter window
 impl InternalGraphics for FlutterbugGraphics {

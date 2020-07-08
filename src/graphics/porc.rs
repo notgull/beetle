@@ -45,6 +45,8 @@
 
 use super::InternalGraphics;
 use crate::{Color, Window};
+use core::convert::TryInto;
+use cty::c_int;
 use euclid::default::Point2D;
 use porcupine::{prelude::*, DeviceContext};
 
@@ -60,18 +62,40 @@ impl PorcupineGraphics {
 
 // drop should automatically end the paint
 
+// clip a color to the 256 range
+// TODO: account for alpha
+#[inline]
+fn clip_color(clr: Color) -> (u8, u8, u8) {
+    macro_rules! cnvrt {
+        ($val: expr) => {{
+            ($val * (core::u8::MAX as f32)) as u8
+        }};
+    }
+
+    (cnvrt!(clr.r()), cnvrt!(clr.g()), cnvrt!(clr.b()))
+}
+
 impl InternalGraphics for PorcupineGraphics {
     fn set_foreground(&self, clr: Color) -> crate::Result<()> {
-        // TODO: create a new pen with the specified color
-        unimplemented!()
+        let (r, g, b) = clip_color(clr);
+        self.0.set_pen_color(r, g, b)?;
+        Ok(())
     }
 
     fn set_background(&self, clr: Color) -> crate::Result<()> {
-        // TODO: create a new brush with the specified color
-        unimplemented!()
+        let (r, g, b) = clip_color(clr);
+        self.0.set_brush_color(r, g, b)?;
+        Ok(())
     }
 
     fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()> {
-        unimplemented!()
+        let x1: c_int = p1.x.try_into()?;
+        let x2: c_int = p2.x.try_into()?;
+        let y1: c_int = p1.y.try_into()?;
+        let y2: c_int = p2.y.try_into()?;
+
+        self.0
+            .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
+        Ok(())
     }
 }
