@@ -170,7 +170,7 @@ pub struct Event {
 }
 
 impl fmt::Debug for Event {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Event")
             .field("target_window", &self.target_window)
             .field("data", &self.data)
@@ -221,6 +221,23 @@ impl Event {
     #[inline]
     pub fn window(&self) -> &Window {
         &self.target_window
+    }
+
+    /// Get the current set of arguments for this event. These are additional
+    /// arguments that cannot be put into the EventData type; for instance, user-
+    /// created events.
+    #[inline]
+    pub fn arguments(&self) -> &[Arc<dyn Any + Send + Sync + 'static>] {
+        &self.arguments
+    }
+
+    /// Push a new argument into the arguments list.
+    #[inline]
+    pub fn push_argument<T>(&mut self, arg: T)
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        self.arguments.push(Arc::new(arg));
     }
 
     /// Dispatch its event to the system handling source.

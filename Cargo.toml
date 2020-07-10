@@ -19,7 +19,7 @@ hashbrown = "0.8"
 maybe-uninit = "2"
 # TODO: remove deadlock detector unless we need it
 parking_lot = { version = "0.10", features = ["nightly", "deadlock_detection"], optional = true }
-ordered-float = { version = "1.1", default-features = false}
+ordered-float = { version = "1.1", default-features = false }
 smallvec = "1.4"
 scopeguard = "1.1"
 spin = "0.5"
@@ -28,7 +28,7 @@ spin = "0.5"
 env_logger = "0.7"
 
 [target.'cfg(windows)'.dependencies]
-porcupine = { version = "0.1.0" }
+porcupine = { version = "0.2.4" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 flutterbug = { version = "0.1.1" }

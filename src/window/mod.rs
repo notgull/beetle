@@ -44,19 +44,17 @@
  */
 
 use crate::{
-    mutexes::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    mutexes::{Mutex, RwLock, RwLockReadGuard},
     Event, EventData, EventType, Instance, Texture,
 };
 use alloc::{
     string::{String, ToString},
     sync::Arc,
-    vec,
 };
 use core::{
     any::Any,
     fmt,
     hash::{Hash, Hasher},
-    mem,
 };
 use euclid::default::Rect;
 use hashbrown::HashSet;
@@ -142,8 +140,12 @@ pub struct Window {
 }
 
 impl fmt::Debug for Window {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Beetle Window #{}", self.id(),)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Window")
+            .field("id", &self.id)
+            .field("handled_events", &self.handled_events)
+            .field("instance", &self.instance)
+            .finish()
     }
 }
 
@@ -304,11 +306,11 @@ impl Window {
     #[inline]
     pub fn handle_event(&self, event: &Event) -> crate::Result<()> {
         match event.data() {
-            EventData::BoundsChanging { ref old, ref new } => {
+            EventData::BoundsChanging { old: _, ref new } => {
                 let bools = *event.hidden_data::<(bool, bool)>().unwrap();
                 self.set_bounds_internal(*new, bools.0, bools.1)?
             }
-            EventData::TextChanging { ref old, ref new } => self.set_text_internal(new.clone())?,
+            EventData::TextChanging { old: _, ref new } => self.set_text_internal(new.clone())?,
             EventData::AboutToPaint => self.repaint(None)?,
             _ => { /* do nothing */ }
         }
@@ -477,29 +479,23 @@ impl Window {
     /// Display the window.
     #[inline]
     pub fn show(&self) -> crate::Result<()> {
-        #[cfg(debug_assertions)]
-        log::trace!("Locked write_access for \"show\"");
-
-        // Win32 Note: show() calls the window proc, which needs write access to the lock, which causes
-        // an error. To circumvent this, we call show() and update() manually
-
         cfg_if::cfg_if! {
             if #[cfg(windows)] {
-                let l = self.inner.try_read().ok_or_else(|| crate::Error::UnableToRead)?;
-                let weak = l.inner_porc_window().weak_reference();
-                mem::drop(l);
-                #[cfg(debug_assertions)]
-                log::trace!("Unlocked read access for \"show\"");
+                use core::mem;
 
-                // call show() and update()
-                weak.show(porcupine::CmdShow::Show);
-                weak.update()?;
+                // clone the window out of the lock
+                let l = self.inner_window()?;
+                let w = l.inner_porc_window().weak_reference();
+                mem::drop(l);
+
+                w.show(porcupine::CmdShow::Show);
+                w.update()?;
                 Ok(())
             } else {
-                #[cfg(debug_assertions)]
-                defer!(log::trace!("Unlocked read access for \"show\""));
-
-                self.inner.try_read().ok_or_else(|| crate::Error::UnableToRead)?.show()
+                self.inner
+                    .try_read()
+                    .ok_or_else(|| crate::Error::UnableToRead)?
+                    .show()
             }
         }
     }

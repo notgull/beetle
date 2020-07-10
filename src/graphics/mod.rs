@@ -43,10 +43,13 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Color, Window};
+use crate::{Color, GeometricArc, Window};
 use alloc::boxed::Box;
 use core::fmt;
-use euclid::default::Point2D;
+use euclid::{
+    default::{Point2D, Rect},
+    Angle,
+};
 
 #[cfg(target_os = "linux")]
 mod flutter;
@@ -57,6 +60,12 @@ pub(crate) use flutter::*;
 #[cfg(windows)]
 pub(crate) use porc::*;
 
+// helper function to convert a rectangle to a GeometricArc
+#[inline]
+fn rect_to_garc(rect: Rect<u32>) -> GeometricArc {
+    unsafe { GeometricArc::new_unchecked(rect, Angle::degrees(0.0), Angle::degrees(360.0)) }
+}
+
 /// The internal graphics object. This is loaded into the Graphics object and used
 /// for its methods.
 pub trait InternalGraphics {
@@ -66,8 +75,53 @@ pub trait InternalGraphics {
     /// Set the background color.
     fn set_background(&self, clr: Color) -> crate::Result<()>;
 
+    /// Set the line width.
+    fn set_line_width(&self, width: u32) -> crate::Result<()>;
+
     /// Draw a line from one point to another, using the foreground color.
     fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()>;
+
+    /// Draw several lines on this graphics object, using the foreground color.
+    #[inline]
+    fn draw_lines(&self, lines: &[(Point2D<u32>, Point2D<u32>)]) -> crate::Result<()> {
+        lines
+            .iter()
+            .try_for_each::<_, crate::Result<()>>(|i| self.draw_line(i.0, i.1))
+    }
+
+    /// Draw a rectangle on this graphics object, using the foreground color.
+    fn draw_rectangle(&self, rect: Rect<u32>) -> crate::Result<()>;
+
+    /// Draw several rectangles on this graphics object, using the foreground color.
+    #[inline]
+    fn draw_rectangles(&self, rects: &[Rect<u32>]) -> crate::Result<()> {
+        rects
+            .iter()
+            .try_for_each::<_, crate::Result<()>>(|r| self.draw_rectangle(*r))
+    }
+
+    /// Draw an arc onto this graphics object, using the foreground color.
+    fn draw_arc(&self, arc: GeometricArc) -> crate::Result<()>;
+
+    /// Draw several arcs onto this graphics object, using the foreground color.
+    #[inline]
+    fn draw_arcs(&self, arcs: &[GeometricArc]) -> crate::Result<()> {
+        arcs.iter()
+            .try_for_each::<_, crate::Result<()>>(|a| self.draw_arc(*a))
+    }
+
+    /// Draw an ellipse onto this graphics object, using the foreground color.
+    fn draw_ellipse(&self, bounding_rect: Rect<u32>) -> crate::Result<()> {
+        self.draw_arc(rect_to_garc(bounding_rect))
+    }
+
+    /// Draw several ellipses onto this graphics object, using the foreground color.
+    #[inline]
+    fn draw_ellipses(&self, ellipses: &[Rect<u32>]) -> crate::Result<()> {
+        ellipses
+            .iter()
+            .try_for_each::<_, crate::Result<()>>(|e| self.draw_ellipse(*e))
+    }
 }
 
 // storage object for internal graphics object
@@ -106,7 +160,7 @@ pub struct Graphics(GraphicsStorage);
 
 impl fmt::Debug for Graphics {
     #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Graphics")
     }
 }
@@ -136,5 +190,23 @@ impl Graphics {
     #[inline]
     pub fn graphics(&self) -> &dyn InternalGraphics {
         self.0.graphics()
+    }
+
+    /// Set the foreground color for this graphical object.
+    #[inline]
+    pub fn set_foreground_color(&self, clr: Color) -> crate::Result<()> {
+        self.graphics().set_foreground(clr)
+    }
+
+    /// Set the background color for this graphical object.
+    #[inline]
+    pub fn set_background_color(&self, clr: Color) -> crate::Result<()> {
+        self.graphics().set_background(clr)
+    }
+
+    /// Draw a line on this graphical object. This uses the foreground color.
+    #[inline]
+    pub fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()> {
+        self.graphics().draw_line(p1, p2)
     }
 }

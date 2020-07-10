@@ -101,7 +101,7 @@ pub unsafe extern "system" fn beetle_wndproc(
         return DefWindowProcA(hwnd, msg, wparam, lparam);
     }
 
-    // set the window part in WC_NCCREATE
+    // set the handle containing instance in WC_NCCREATE
     if msg == WM_NCCREATE {
         let create_struct_ptr = mem::transmute::<LPARAM, LPCREATESTRUCTA>(lparam);
         let window_object_ptr = (*create_struct_ptr).lpCreateParams;

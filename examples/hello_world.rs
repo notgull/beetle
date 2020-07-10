@@ -82,7 +82,6 @@ fn main() -> Result<()> {
         "Hello world!".to_string(),
         rect(0, 0, 400, 200),
         None,
-        true,
     )?;
 
     window.receive_events(&[EventType::MouseButtonDown, EventType::KeyDown])?;

@@ -224,12 +224,13 @@ impl GenericWindowInternal for WindowInternal {
 
     #[inline]
     fn show(&self) -> crate::Result<()> {
-        // on win32, show() is handled by the Window object
+        // implementation handled by the Window object
         unimplemented!()
     }
 
     #[inline]
     fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()> {
+        self.inner.repaint();
         self.inner.invalidate(bounds.map(|b| {
             euclid::rect(
                 b.origin.x as c_int,

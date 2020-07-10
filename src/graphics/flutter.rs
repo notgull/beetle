@@ -44,9 +44,9 @@
  */
 
 use super::InternalGraphics;
-use crate::{mutexes::Mutex, Color, Window};
+use crate::{mutexes::Mutex, Color, GeometricArc, Window};
 use core::convert::TryInto;
-use euclid::default::Point2D;
+use euclid::default::{Point2D, Rect};
 use flutterbug::{prelude::*, Color as FlColor, DisplayReference};
 use hashbrown::HashMap;
 
@@ -129,22 +129,37 @@ impl FlutterbugGraphics {
 
 // most methods can just be forwarded to the inner flutter window
 impl InternalGraphics for FlutterbugGraphics {
+    #[inline]
     fn set_foreground(&self, clr: Color) -> crate::Result<()> {
+        let clr = self.to_flcolor(clr)?;
+
         let inner = self.window.inner_window()?;
-        inner
-            .inner_flutter_window()
-            .set_foreground(self.to_flcolor(clr)?)?;
+        inner.inner_flutter_window().set_foreground(clr)?;
+        self.color_info.lock().foreground = clr;
         Ok(())
     }
 
+    #[inline]
     fn set_background(&self, clr: Color) -> crate::Result<()> {
+        let clr = self.to_flcolor(clr)?;
         self.window
             .inner_window()?
             .inner_flutter_window()
-            .set_foreground(self.to_flcolor(clr)?)?;
+            .set_foreground(clr)?;
+        self.color_info.lock().background = clr;
         Ok(())
     }
 
+    #[inline]
+    fn set_line_width(&self, lw: u32) -> crate::Result<()> {
+        self.window
+            .inner_window()?
+            .inner_flutter_window()
+            .set_line_width(lw)?;
+        Ok(())
+    }
+
+    #[inline]
     fn draw_line(&self, p1: Point2D<u32>, p2: Point2D<u32>) -> crate::Result<()> {
         let x1: i32 = p1.x.try_into()?;
         let x2: i32 = p2.x.try_into()?;
@@ -155,6 +170,40 @@ impl InternalGraphics for FlutterbugGraphics {
             .inner_window()?
             .inner_flutter_window()
             .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
+        Ok(())
+    }
+
+    #[inline]
+    fn draw_rectangle(&self, rect: Rect<u32>) -> crate::Result<()> {
+        let origin = Point2D::<i32>::new(rect.origin.x.try_into()?, rect.origin.y.try_into()?);
+        self.window
+            .inner_window()?
+            .inner_flutter_window()
+            .draw_rectangle(origin, rect.size)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn draw_arc(&self, arc: GeometricArc) -> crate::Result<()> {
+        // X11 protocol mandates that we use angles multiplied by 64
+        macro_rules! to_x11_angle {
+            ($ang: expr) => {{
+                ($ang.radians * 64.0) as i32
+            }};
+        }
+
+        let angles = (
+            to_x11_angle!(arc.start_angle()),
+            to_x11_angle!(arc.end_angle()),
+        );
+        let bounds = arc.bounds();
+        let origin = Point2D::<i32>::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?);
+        let size = bounds.size;
+
+        self.window
+            .inner_window()?
+            .inner_flutter_window()
+            .draw_arc(origin, size, angles)?;
         Ok(())
     }
 }

@@ -49,8 +49,10 @@
 //! Beetle is built upon the idea that control over the event loop should belong to the programmer,
 //! rather than the framework.
 
+#![allow(clippy::missing_safety_doc)]
 #![feature(trait_alias)]
 #![no_std]
+#![warn(rust_2018_idioms)]
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
@@ -61,6 +63,7 @@ extern crate std as alloc;
 
 //#![cfg_attr(target_os = "linux", feature("flutterbug"))]
 //#![cfg_attr(windows, feature("porcupine"))]
+pub mod arc;
 pub mod color;
 pub mod error;
 pub mod event;
@@ -68,12 +71,14 @@ pub mod graphics;
 pub mod instance;
 pub mod keyboard;
 pub mod mouse;
+pub mod pixel_buffer;
 pub mod ro_mmg;
 pub(crate) mod take_vec;
 pub mod texture;
 pub mod window;
 pub(crate) mod wndproc;
 
+pub use arc::*;
 pub use color::*;
 pub use error::*;
 pub use event::*;
@@ -81,6 +86,7 @@ pub use graphics::*;
 pub use instance::*;
 pub use keyboard::*;
 pub use mouse::*;
+pub use pixel_buffer::PixelBuffer;
 #[cfg(feature = "std")]
 pub use ro_mmg::*;
 pub use texture::*;

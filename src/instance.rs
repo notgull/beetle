@@ -45,14 +45,12 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, EventHandler, EventType, GenericWindowInternal, Texture, Window,
+    Event, GenericWindowInternal, Texture, Window,
 };
-use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
-use core::{mem, option::Option};
+use alloc::{collections::VecDeque, string::String, sync::Arc};
+use core::{fmt, mem, option::Option};
 use euclid::default::Rect;
 use hashbrown::{HashMap, HashSet};
-#[cfg(feature = "std")]
-use parking_lot::{MappedMutexGuard, MutexGuard};
 #[cfg(windows)]
 use porcupine::prelude::*;
 use smallvec::SmallVec;
@@ -81,6 +79,13 @@ struct InstanceInternal {
 /// that is needed to create windows and widgets.
 #[repr(transparent)]
 pub struct Instance(Arc<InstanceInternal>);
+
+impl fmt::Debug for Instance {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("Instance")
+    }
+}
 
 impl PartialEq for Instance {
     #[inline]
@@ -124,13 +129,12 @@ impl Instance {
         text: String,
         bounds: Rect<u32>,
         background: Option<Texture>,
-        is_top_level: bool,
     ) -> crate::Result<Window> {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
-                self.flutterbug_create_window(parent, text, bounds, background, is_top_level)
+                self.flutterbug_create_window(parent, text, bounds, background, parent.is_none())
             } else if #[cfg(windows)] {
-                self.porcupine_create_window(parent, text, bounds, background, is_top_level)
+                self.porcupine_create_window(parent, text, bounds, background, parent.is_none())
             } else {
                 unimplemented!()
             }
@@ -235,7 +239,7 @@ impl Instance {
     #[inline]
     pub(crate) fn flutterbug_get_window(&self, ex_id: WindowID) -> Option<Window> {
         let l = self.0.window_mappings.lock();
-        l.get(&ex_id).map(|w| w.clone())
+        l.get(&ex_id).cloned()
     }
 
     #[inline]
@@ -297,6 +301,7 @@ impl Instance {
     ) -> crate::Result<Window> {
         let cw = crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
         let id = cw.id();
+        // hashmap can only store the usize
         let ex_id = cw.inner_porc_window().hwnd().as_ptr() as *const () as usize;
 
         let w = Window::from_raw(
@@ -310,6 +315,11 @@ impl Instance {
         // add to window mappings
         let mut wm = self.0.window_mappings.lock();
         wm.insert(ex_id, w.clone());
+        mem::drop(wm);
+
+        // force a repaint now that it's initialized
+        w.repaint(None)?;
+
         Ok(w)
     }
 

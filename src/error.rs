@@ -50,6 +50,25 @@ use ordered_float::FloatIsNan;
 #[cfg(windows)]
 use porcupine::Error as PorcupineError;
 
+/// Things that can cause a color to be invalid.
+#[derive(Debug)]
+pub enum InvalidColor {
+    OutOfRange(f32),
+    FoundNan(FloatIsNan),
+}
+
+impl fmt::Display for InvalidColor {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidColor::OutOfRange(i) => {
+                write!(f, "Expected float {} to be between -1.0f and 1.0f", i)
+            }
+            InvalidColor::FoundNan(ref fnan) => fmt::Display::fmt(fnan, f),
+        }
+    }
+}
+
 /// Common error type returned by Beetle functions.
 #[derive(Debug)]
 pub enum Error {
@@ -59,7 +78,7 @@ pub enum Error {
     #[cfg(windows)]
     Porc(PorcupineError),
     TryFromInt(TryFromIntError),
-    NanFound(FloatIsNan),
+    InvalidColor(InvalidColor),
 
     WindowNotFound,
     KeysymNotFound,
@@ -93,7 +112,7 @@ impl fmt::Display for Error {
             Self::WindowIDNoDowncast => f.pad("Window ID did not downcast to a valid element"),
             Self::UnableToWrite => f.pad("Unable to write to RwLock"),
             Self::UnableToRead => f.pad("Unable to read from RwLock"),
-            Self::NanFound(ref n) => fmt::Display::fmt(n, f),
+            Self::InvalidColor(ref i) => fmt::Display::fmt(i, f),
             _ => unreachable!(),
         }
     }
@@ -125,9 +144,12 @@ impl From<TryFromIntError> for Error {
 impl From<FloatIsNan> for Error {
     #[inline]
     fn from(fin: FloatIsNan) -> Self {
-        Self::NanFound(fin)
+        Self::InvalidColor(InvalidColor::FoundNan(fin))
     }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 /// Result type that returns beetle::Error to make things more conveinent.
 pub type Result<T> = core::result::Result<T, Error>;

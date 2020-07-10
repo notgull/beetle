@@ -43,10 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::{
-    hash::{Hash, Hasher},
-    mem,
-};
+use crate::InvalidColor;
 use ordered_float::NotNan;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -57,15 +54,24 @@ pub struct Color {
     a: NotNan<f32>,
 }
 
+#[inline]
+fn checked_cnvrt(fe: f32) -> crate::Result<NotNan<f32>> {
+    if -1.0 <= fe && fe <= 1.0 {
+        Ok(NotNan::new(fe)?)
+    } else {
+        Err(crate::Error::InvalidColor(InvalidColor::OutOfRange(fe)))
+    }
+}
+
 impl Color {
     /// Create a new color. This function checks for NaN values, and returns an error if it finds one.
     #[inline]
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> crate::Result<Self> {
         Ok(Self {
-            r: NotNan::new(r)?,
-            g: NotNan::new(g)?,
-            b: NotNan::new(b)?,
-            a: NotNan::new(a)?,
+            r: checked_cnvrt(r)?,
+            g: checked_cnvrt(g)?,
+            b: checked_cnvrt(b)?,
+            a: checked_cnvrt(a)?,
         })
     }
 
@@ -102,5 +108,88 @@ impl Color {
     #[inline]
     pub fn a(&self) -> f32 {
         self.a.into_inner()
+    }
+
+    /// Set the red component of this color.
+    #[inline]
+    pub fn set_r(&mut self, val: f32) -> crate::Result<()> {
+        self.r = checked_cnvrt(val)?;
+        Ok(())
+    }
+
+    /// Set the red component of this color without checking for invalid values.
+    #[inline]
+    pub unsafe fn set_r_unchecked(&mut self, val: f32) {
+        self.r = NotNan::unchecked_new(val);
+    }
+
+    /// Set the green component of this color.
+    #[inline]
+    pub fn set_g(&mut self, val: f32) -> crate::Result<()> {
+        self.g = checked_cnvrt(val)?;
+        Ok(())
+    }
+
+    /// Set the green component of this color without checking for invalid values.
+    #[inline]
+    pub unsafe fn set_g_unchecked(&mut self, val: f32) {
+        self.g = NotNan::unchecked_new(val);
+    }
+
+    /// Set the blue component of this color.
+    #[inline]
+    pub fn set_b(&mut self, val: f32) -> crate::Result<()> {
+        self.b = checked_cnvrt(val)?;
+        Ok(())
+    }
+
+    /// Set the blue component of this color without checking for invalid values.
+    #[inline]
+    pub unsafe fn set_b_unchecked(&mut self, val: f32) {
+        self.b = NotNan::unchecked_new(val);
+    }
+
+    /// Set the alpha component of this color.
+    #[inline]
+    pub fn set_a(&mut self, val: f32) -> crate::Result<()> {
+        self.a = checked_cnvrt(val)?;
+        Ok(())
+    }
+
+    /// Set the alpha component of this color without checking for invalid values.
+    #[inline]
+    pub unsafe fn set_a_unchecked(&mut self, val: f32) {
+        self.a = NotNan::unchecked_new(val);
+    }
+
+    /// Create a new color from RGB bytes.
+    #[inline]
+    pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        macro_rules! cnvrt_u8_f32 {
+            ($val: expr) => {{
+                ($val as f32) / (core::u8::MAX as f32)
+            }};
+        }
+
+        unsafe {
+            Self::new_no_nan_check(
+                cnvrt_u8_f32!(r),
+                cnvrt_u8_f32!(g),
+                cnvrt_u8_f32!(b),
+                cnvrt_u8_f32!(a),
+            )
+        }
+    }
+}
+
+/// Several common colors.
+pub mod colors {
+    use super::Color;
+
+    pub fn black() -> Color {
+        unsafe { Color::new_no_nan_check(0.0, 0.0, 0.0, 1.0) }
+    }
+    pub fn white() -> Color {
+        unsafe { Color::new_no_nan_check(1.0, 1.0, 1.0, 1.0) }
     }
 }

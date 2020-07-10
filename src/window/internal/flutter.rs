@@ -45,7 +45,7 @@
 
 use super::{super::Window, unique_id, EventHandler, GenericWindowInternal};
 use crate::{EventType, Instance, Texture};
-use alloc::{boxed::Box, string::String, sync::Arc};
+use alloc::{boxed::Box, string::String};
 use core::{convert::TryInto, mem};
 use euclid::default::{Point2D, Rect};
 use flutterbug::{

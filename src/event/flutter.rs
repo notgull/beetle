@@ -45,7 +45,6 @@
 
 use super::{Event, EventData};
 use crate::{Graphics, Instance, KeyInfo, KeyType, MouseButton, Window};
-use alloc::{sync::Arc, vec};
 use core::convert::TryInto;
 use euclid::default::Point2D;
 use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};

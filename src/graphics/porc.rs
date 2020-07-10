@@ -44,19 +44,46 @@
  */
 
 use super::InternalGraphics;
-use crate::{Color, Window};
+use crate::{colors, mutexes::Mutex, Color, GeometricArc, Window};
 use core::convert::TryInto;
 use cty::c_int;
-use euclid::default::Point2D;
-use porcupine::{prelude::*, DeviceContext};
+use euclid::default::{Point2D, Rect};
+use porcupine::{prelude::*, Brush, DeviceContext, Pen, PenStyle};
 
-#[repr(transparent)]
-pub struct PorcupineGraphics(DeviceContext);
+// the pen/brush info needs to be stored along with the graphics context
+struct PenAndBrush {
+    pen: Option<Pen>,
+    // also store the current line width and color
+    line_width: u32,
+    pen_color: Color,
+
+    brush: Option<Brush>,
+    // also store the current color
+    brush_color: Color,
+}
+
+pub struct PorcupineGraphics {
+    dc: DeviceContext,
+    pb: Mutex<PenAndBrush>,
+}
 
 impl PorcupineGraphics {
     #[inline]
     pub fn new(wnd: &Window) -> crate::Result<Self> {
-        Ok(Self(wnd.inner_window()?.inner_porc_window().begin_paint()?))
+        let dc = wnd.inner_window()?.inner_porc_window().begin_paint()?;
+        dc.set_pen_color(0, 0, 0)?;
+        dc.set_brush_color(core::u8::MAX, core::u8::MAX, core::u8::MAX)?;
+
+        Ok(Self {
+            dc,
+            pb: Mutex::new(PenAndBrush {
+                pen: None,
+                brush: None,
+                line_width: 1,
+                pen_color: colors::black(),
+                brush_color: colors::white(),
+            }),
+        })
     }
 }
 
@@ -75,16 +102,46 @@ fn clip_color(clr: Color) -> (u8, u8, u8) {
     (cnvrt!(clr.r()), cnvrt!(clr.g()), cnvrt!(clr.b()))
 }
 
+#[inline]
+fn cnvrt_rect(rect: Rect<u32>) -> crate::Result<Rect<c_int>> {
+    Ok(euclid::rect(
+        rect.origin.x.try_into()?,
+        rect.origin.y.try_into()?,
+        rect.size.width.try_into()?,
+        rect.size.height.try_into()?,
+    ))
+}
+
 impl InternalGraphics for PorcupineGraphics {
     fn set_foreground(&self, clr: Color) -> crate::Result<()> {
         let (r, g, b) = clip_color(clr);
-        self.0.set_pen_color(r, g, b)?;
+        // create a new pen from the color and stored line_width
+        let mut pb = self.pb.lock();
+
+        pb.pen_color = clr;
+        let pen = Pen::new(r, g, b, pb.line_width, PenStyle::Solid)?;
+        self.dc.set_pen(&pen);
+        pb.pen = Some(pen);
+
         Ok(())
     }
 
     fn set_background(&self, clr: Color) -> crate::Result<()> {
         let (r, g, b) = clip_color(clr);
-        self.0.set_brush_color(r, g, b)?;
+        self.dc.set_brush_color(r, g, b)?;
+        Ok(())
+    }
+
+    fn set_line_width(&self, lw: u32) -> crate::Result<()> {
+        // create a new pen from the stored color
+        let mut pb = self.pb.lock();
+        pb.line_width = lw;
+
+        let (r, g, b) = clip_color(pb.pen_color);
+        let pen = Pen::new(r, g, b, lw, PenStyle::Solid)?;
+        self.dc.set_pen(&pen);
+        pb.pen = Some(pen);
+
         Ok(())
     }
 
@@ -94,8 +151,25 @@ impl InternalGraphics for PorcupineGraphics {
         let y1: c_int = p1.y.try_into()?;
         let y2: c_int = p2.y.try_into()?;
 
-        self.0
+        self.dc
             .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
+        Ok(())
+    }
+
+    fn draw_rectangle(&self, rect: Rect<u32>) -> crate::Result<()> {
+        let rect: Rect<c_int> = cnvrt_rect(rect)?;
+        self.dc.draw_rect(rect)?;
+        Ok(())
+    }
+
+    fn draw_arc(&self, arc: GeometricArc) -> crate::Result<()> {
+        let bounds = cnvrt_rect(arc.bounds())?;
+        unimplemented!()
+    }
+
+    fn draw_ellipse(&self, bounds: Rect<u32>) -> crate::Result<()> {
+        let bounds = cnvrt_rect(bounds)?;
+        self.dc.draw_ellipse(bounds)?;
         Ok(())
     }
 }

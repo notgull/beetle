@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/texture.rs - A texture that can be drawn onto a window.
+ * examples/draw.rs - Test of drawing capabilities.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -43,20 +43,60 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Color, PixelBuffer};
-use core::fmt;
+use beetle::{Color, EventData, EventType, Instance, Result};
+use euclid::{rect, point2};
+use std::{env, time::Duration, thread};
 
-pub enum Texture {
-    Color(Color),
-    Image(PixelBuffer),
+// spawns a quick deadlock detector
+fn deadlock_detector() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(10));
+
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
+
+            println!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                println!("Deadlock #{}", i);
+                for t in threads {
+                    println!("Thread Id {:#?}", t.thread_id());
+                    println!("{:#?}", t.backtrace());
+                }
+            }
+        }
+    });
 }
 
-impl fmt::Debug for Texture {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Texture::Color(ref c) => f.debug_tuple("Color").field(c).finish(),
-            Texture::Image(ref p) => f.debug_tuple("Image").field(p).finish(),
+
+fn main() -> Result<()> {
+    env::set_var("RUST_LOG", "beetle=warn");
+    env_logger::init();
+
+    deadlock_detector();
+
+    let instance = Instance::new()?;
+    let window = instance.create_window(None, "Drawing Example".to_string(), rect(0, 0, 400, 200), None)?;
+    window.receive_events(&[EventType::KeyDown])?;
+    window.show()?;
+
+    // colors to use
+
+    'evloop: loop {
+        let event = instance.next_event()?;
+ 
+        if let EventData::Paint(ref g) = event.data() {
+            g.draw_line(point2(10, 10), point2(50, 70))?;
+        }
+
+        if event.is_exit_event() {
+            break 'evloop;
+        } else {
+            event.dispatch()?;
         }
     }
+
+    Ok(())
 }
