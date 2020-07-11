@@ -89,10 +89,12 @@ pub trait InternalGraphics {
             .try_for_each::<_, crate::Result<()>>(|i| self.draw_line(i.0, i.1))
     }
 
-    /// Draw a rectangle on this graphics object, using the foreground color.
+    /// Draw a rectangle on this graphics object, using the foreground pen for the outline
+    /// and the background brush for the fill.
     fn draw_rectangle(&self, rect: Rect<u32>) -> crate::Result<()>;
 
-    /// Draw several rectangles on this graphics object, using the foreground color.
+    /// Draw several rectangles on this graphics object, using the foreground pen for the outline
+    /// and the background brush for the fill.
     #[inline]
     fn draw_rectangles(&self, rects: &[Rect<u32>]) -> crate::Result<()> {
         rects
@@ -100,22 +102,26 @@ pub trait InternalGraphics {
             .try_for_each::<_, crate::Result<()>>(|r| self.draw_rectangle(*r))
     }
 
-    /// Draw an arc onto this graphics object, using the foreground color.
+    /// Draw an arc onto this graphics object, using the foreground color for the outline and
+    /// the background brush for the fill.
     fn draw_arc(&self, arc: GeometricArc) -> crate::Result<()>;
 
-    /// Draw several arcs onto this graphics object, using the foreground color.
+    /// Draw several arcs onto this graphics object, using the foreground color for the
+    /// outline and the background brush for the fill.
     #[inline]
     fn draw_arcs(&self, arcs: &[GeometricArc]) -> crate::Result<()> {
         arcs.iter()
             .try_for_each::<_, crate::Result<()>>(|a| self.draw_arc(*a))
     }
 
-    /// Draw an ellipse onto this graphics object, using the foreground color.
+    /// Draw an ellipse onto this graphics object, using the foreground color for the outline
+    /// and the background brush for the fill.
     fn draw_ellipse(&self, bounding_rect: Rect<u32>) -> crate::Result<()> {
         self.draw_arc(rect_to_garc(bounding_rect))
     }
 
-    /// Draw several ellipses onto this graphics object, using the foreground color.
+    /// Draw several ellipses onto this graphics object, using the foreground color for the
+    /// outline and the background brush for the fill.
     #[inline]
     fn draw_ellipses(&self, ellipses: &[Rect<u32>]) -> crate::Result<()> {
         ellipses

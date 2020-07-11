@@ -13,13 +13,13 @@ cfg-if = "0.1"
 cty = "0.2.1"
 euclid = "0.20"
 image = { version = "0.23", optional = true }
+hashbrown = "0.8"
 lazy_static = "1"
 log = "0.4"
-hashbrown = "0.8"
 maybe-uninit = "2"
 # TODO: remove deadlock detector unless we need it
 parking_lot = { version = "0.10", features = ["nightly", "deadlock_detection"], optional = true }
-ordered-float = { version = "1.1", default-features = false }
+ordered-float = { version = "2", default-features = false }
 smallvec = "1.4"
 scopeguard = "1.1"
 spin = "0.5"

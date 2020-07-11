@@ -56,7 +56,7 @@ lazy_static::lazy_static! {
 }
 
 struct ColorInfo {
-    background: FlColor,
+    background: Option<FlColor>,
     foreground: FlColor,
 }
 
@@ -89,7 +89,7 @@ impl FlutterbugGraphics {
             dpy,
             color_info: Mutex::new(ColorInfo {
                 foreground: black,
-                background: white,
+                background: None,
             }),
         })
     }
@@ -145,8 +145,8 @@ impl InternalGraphics for FlutterbugGraphics {
         self.window
             .inner_window()?
             .inner_flutter_window()
-            .set_foreground(clr)?;
-        self.color_info.lock().background = clr;
+            .set_background(clr)?;
+        self.color_info.lock().background = Some(clr);
         Ok(())
     }
 
@@ -176,10 +176,21 @@ impl InternalGraphics for FlutterbugGraphics {
     #[inline]
     fn draw_rectangle(&self, rect: Rect<u32>) -> crate::Result<()> {
         let origin = Point2D::<i32>::new(rect.origin.x.try_into()?, rect.origin.y.try_into()?);
-        self.window
-            .inner_window()?
-            .inner_flutter_window()
-            .draw_rectangle(origin, rect.size)?;
+        let size = rect.size;
+
+        let inner = self.window.inner_window()?;
+        let ifl = inner.inner_flutter_window();
+        ifl.draw_rectangle(origin, size)?;
+
+        // temporarily switch the background color to the foreground so we
+        // can use it to fill
+        let clock = self.color_info.lock();
+        if let Some(clr) = clock.background {
+            ifl.set_foreground(clr)?;
+            ifl.fill_rectangle(origin, size)?;
+            ifl.set_foreground(clock.foreground)?;
+        }
+
         Ok(())
     }
 
@@ -200,10 +211,18 @@ impl InternalGraphics for FlutterbugGraphics {
         let origin = Point2D::<i32>::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?);
         let size = bounds.size;
 
-        self.window
-            .inner_window()?
-            .inner_flutter_window()
-            .draw_arc(origin, size, angles)?;
+        let inner = self.window.inner_window()?;
+        let ifl = inner.inner_flutter_window();
+        ifl.draw_arc(origin, size, angles)?;
+
+        // fill if we need to
+        let clock = self.color_info.lock();
+        if let Some(clr) = clock.background {
+            ifl.set_foreground(clr)?;
+            ifl.fill_arc(origin, size, angles)?;
+            ifl.set_foreground(clock.foreground)?;
+        }
+
         Ok(())
     }
 }

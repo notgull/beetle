@@ -108,6 +108,9 @@ impl Clone for Instance {
 
 impl Instance {
     /// Create the default instance of the Beetle GUI factory.
+    ///
+    /// This function initializes any connections with the GUI server in
+    /// question, as well as initializes the window map and event queue.
     #[inline]
     pub fn new() -> crate::Result<Instance> {
         cfg_if::cfg_if! {
@@ -121,7 +124,8 @@ impl Instance {
         }
     }
 
-    /// Create a new window.
+    /// Create a new window. This function initializes the window (or equivalent) in
+    /// the backend that the Instance is targeting.
     #[inline]
     pub fn create_window(
         &self,
@@ -328,7 +332,6 @@ impl Instance {
         &self,
         hwnd: porcupine::winapi::shared::windef::HWND,
     ) -> Option<Window> {
-        log::trace!("Accessing window by HWND {:p}", hwnd);
         let wm = self.0.window_mappings.lock();
         wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
     }
@@ -349,7 +352,7 @@ impl Instance {
 
         // drain the next_events variable into the event queue, save for the first element
         let mut next_events = self.0.next_events.lock();
-        let mut drain = next_events.drain(..);
+        let mut drain = next_events.drain(..).rev();
         match drain.next() {
             None => Ok(SmallVec::new()), // just return an empty SmallVec. This is just a stack allocation.
             Some(evs) => {
