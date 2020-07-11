@@ -44,7 +44,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-// this item is only used for the Win32 version of beetle
 #![cfg(windows)]
 #![allow(dead_code)]
 

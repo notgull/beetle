@@ -45,9 +45,9 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, GenericWindowInternal, Texture, Window,
+    Event, EventLoop, EventData, GenericWindowInternal, Texture, Window,
 };
-use alloc::{collections::VecDeque, string::String, sync::Arc};
+use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 use core::{fmt, mem, option::Option};
 use euclid::default::Rect;
 use hashbrown::{HashMap, HashSet};
@@ -57,6 +57,8 @@ use smallvec::SmallVec;
 
 struct InstanceInternal {
     event_queue: Mutex<VecDeque<Event>>,
+    event_loop: RwLock<Box<dyn EventLoop>>,
+    end_result: Mutex<Option<crate::Result<()>>>,
 
     #[cfg(target_os = "linux")]
     window_mappings: Mutex<HashMap<WindowID, Window>>,
@@ -69,8 +71,6 @@ struct InstanceInternal {
 
     #[cfg(windows)]
     window_mappings: Mutex<HashMap<usize, Window>>,
-    #[cfg(windows)]
-    next_events: Mutex<SmallVec<[crate::Result<SmallVec<[Event; 2]>>; 1]>>,
 }
 
 /// An instance of the Beetle GUI window factory.
@@ -112,12 +112,12 @@ impl Instance {
     /// This function initializes any connections with the GUI server in
     /// question, as well as initializes the window map and event queue.
     #[inline]
-    pub fn new() -> crate::Result<Instance> {
+    pub fn new<T: EventLoop + 'static>(evl: T) -> crate::Result<Instance> {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "linux")] {
-                Self::flutterbug_new()
+                Self::flutterbug_new(Box::new(evl))
             } else if #[cfg(windows)] {
-                Self::porcupine_new()
+                Self::porcupine_new(Box::new(evl))
             } else {
                 unimplemented!()
             }
@@ -158,9 +158,9 @@ impl Instance {
         evs.into_iter().for_each(|e| evq.push_back(e));
     }
 
-    /// Get the next event.
+    /// Run the event loop that this instance was created with.
     #[inline]
-    pub fn next_event(&self) -> crate::Result<Event> {
+    pub fn event_loop(&self) -> crate::Result<()> {
         #[inline]
         fn hold_for_events(this: &Instance) -> crate::Result<SmallVec<[Event; 2]>> {
             cfg_if::cfg_if! {
@@ -174,27 +174,54 @@ impl Instance {
             }
         }
 
-        let mut evq = self.0.event_queue.lock();
-        match evq.pop_front() {
-            Some(ev) => Ok(ev),
-            None => {
-                mem::drop(evq); // hold_for_events might need the mutex
+        loop {
+            // retrieve a single event from the queue
+            let mut evq = self.0.event_queue.lock();
+            let events = evq.drain(..).rev().collect::<SmallVec<[Event; 5]>>(); // drain so we can drop the lock
 
-                // hold for the next event
-                let mut ne: Option<Event> = None;
-                while ne.is_none() {
-                    let mut new_evs = hold_for_events(self)?;
-                    let mut drain = new_evs
-                        .drain(..)
-                        .filter(|e| e.window().receives_event(&e.ty()));
-                    let mut evq = self.0.event_queue.lock();
+            // drop the mutex lock; the event loop might need it
+            mem::drop(evq);
 
-                    ne = drain.next();
-                    drain.for_each(|ev| evq.push_back(ev));
-                }
-                Ok(ne.unwrap())
+            // using the drained queue, run the event loop on each event
+            self.process_events(&events)?;
+
+            // if zero events were drained, hold for the next set of events
+            if events.is_empty() {
+                let events = hold_for_events(self)?;
+                self.process_events(&events)?;
+            }
+
+            // check for a delayed error or the end of the event loop
+            if let Some(res) = self.0.end_result.lock().take() {
+                return res;
             }
         }
+    }
+
+    /// Run the event loop concurrently(?) for a series of events.
+    #[inline]
+    pub(crate) fn process_events(&self, evs: &[Event]) -> crate::Result<()> {
+        if evs.len() == 0 {
+            return Ok(());
+        }
+
+        self.0
+            .event_loop
+            .try_read()
+            .ok_or_else(|| crate::Error::UnableToRead)?
+            .handle_events(evs, self)
+    }
+
+    /// Delay an error to be processed until after the current event loop iteration.
+    #[inline]
+    pub(crate) fn delay_error(&self, err: crate::Error) {
+        *self.0.end_result.lock() = Some(Err(err));
+    }
+
+    /// End the event loop.
+    #[inline]
+    pub(crate) fn exit_event_loop(&self) {
+        *self.0.end_result.lock() = Some(Ok(()));
     }
 }
 
@@ -207,13 +234,15 @@ use flutterbug::x11::xlib::Window as WindowID;
 #[cfg(target_os = "linux")]
 impl Instance {
     /// Create the flutterbug instance of the Beetle GUI factory.
-    fn flutterbug_new() -> crate::Result<Instance> {
+    fn flutterbug_new(event_loop: Box<dyn EventLoop>) -> crate::Result<Instance> {
         use flutterbug::{prelude::*, Display};
 
         let dpy = Display::new()?;
 
         Ok(Self(Arc::new(InstanceInternal {
             event_queue: Mutex::new(VecDeque::new()),
+            event_loop: RwLock::new(event_loop),
+            end_result: Mutex::new(None),
             window_mappings: Mutex::new(HashMap::new()),
             atoms: [dpy.internal_atom("WM_DELETE_WINDOW", false)?],
             im: dpy.input_method()?,
@@ -282,15 +311,16 @@ use porcupine::HWND;
 #[cfg(windows)]
 impl Instance {
     #[inline]
-    fn porcupine_new() -> crate::Result<Instance> {
+    fn porcupine_new(event_loop: Box<dyn EventLoop>) -> crate::Result<Instance> {
         // win32 doesn't really have a connection object like X11 does
         // however, we do well to initialize CommCtrl here
         porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
 
         Ok(Self(Arc::new(InstanceInternal {
+            event_loop: RwLock::new(event_loop),
             event_queue: Mutex::new(VecDeque::new()),
+            end_result: Mutex::new(None),
             window_mappings: Mutex::new(HashMap::new()),
-            next_events: Mutex::new(SmallVec::new()),
         })))
     }
 
@@ -337,36 +367,27 @@ impl Instance {
     }
 
     #[inline]
-    pub(crate) fn porcupine_set_next_events(&self, ne: crate::Result<SmallVec<[Event; 2]>>) {
-        let mut l = self.0.next_events.lock();
-        l.push(ne);
-    }
-
-    #[inline]
     pub(crate) fn porcupine_hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>> {
         // run a single iteration of the message loop
+        // see wndproc.rs for an explanation
         if let Some(ref msg) = porcupine::get_message()? {
             porcupine::translate_message(msg);
             porcupine::dispatch_message(msg);
-        }
-
-        // drain the next_events variable into the event queue, save for the first element
-        let mut next_events = self.0.next_events.lock();
-        let mut drain = next_events.drain(..).rev();
-        match drain.next() {
-            None => Ok(SmallVec::new()), // just return an empty SmallVec. This is just a stack allocation.
-            Some(evs) => {
-                // if the remaining length is 1 or more, drain it into the event queue
-                if drain.len() > 0 {
-                    let mut evq = self.0.event_queue.lock();
-                    drain.try_for_each::<_, crate::Result<()>>(|nevs| {
-                        nevs?.into_iter().for_each(|e| evq.push_back(e));
-                        Ok(())
-                    })?;
-                }
-
-                evs
-            }
+            Ok(SmallVec::new())
+        } else {
+            // create a quit event
+            // just pin it to any particular window we want
+            let pinner_window = self
+                .0
+                .window_mappings
+                .lock()
+                .iter()
+                .map(|(_k, v)| v.clone())
+                .next()
+                .unwrap();
+            let mut qev = Event::new(&pinner_window, EventData::Quit);
+            qev.set_is_exit_event(true);
+            Ok(smallvec::smallvec![qev])
         }
     }
 }

@@ -88,6 +88,7 @@ fn main() -> Result<()> {
         let event = instance.next_event()?;
  
         if let EventData::Paint(ref g) = event.data() {
+            println!("Painting line");
             g.draw_line(point2(10, 10), point2(50, 70))?;
         }
 

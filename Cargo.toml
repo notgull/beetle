@@ -20,7 +20,8 @@ maybe-uninit = "2"
 # TODO: remove deadlock detector unless we need it
 parking_lot = { version = "0.10", features = ["nightly", "deadlock_detection"], optional = true }
 ordered-float = { version = "2", default-features = false }
-smallvec = "1.4"
+rayon = { version = "1.3.1", optional = true }
+smallvec = "1.4.1"
 scopeguard = "1.1"
 spin = "0.5"
 
@@ -34,7 +35,8 @@ porcupine = { version = "0.2.4" }
 flutterbug = { version = "0.1.1" }
 
 [features]
-default = ["std"]
+default = ["std", "concurrent"]
+concurrent = ["rayon", "std"]
 std = ["parking_lot", "image", "ordered-float/std"]
 
 [badges]

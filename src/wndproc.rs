@@ -58,8 +58,6 @@ use porcupine::winapi::{
 };
 
 /// The window procedure used by Beetle.
-///
-/// TODO: a lot of this could be incorporated into porcupine
 pub unsafe extern "system" fn beetle_wndproc(
     hwnd: HWND,
     msg: UINT,
@@ -82,17 +80,16 @@ pub unsafe extern "system" fn beetle_wndproc(
      *     is set to a leaked instance of a clone of the Window. The Window clone also
      *     contains a reference to the current Instance, which ensures we have both
      *     during the Window Procedure.
-     * 2). When the Instance::next_event() function is called, it will call the usual
+     * 2). When the event loop function is called, it will call the usual
      *     Win32 event loop (e.g. GetMessage, TranslateMessage, DispatchMessage). The
      *     DispatchMessage function should call this window procedure. Note that all of
      *     these operations should be synchronous, so we shouldn't have to worry about
-     *     any data races. I've still locked the next_events variable in a Mutex to
-     *     keep the Instance thread-safe.
+     *     any data races.
      * 3). Inside of this function, given the message information, we will retrieve the
      *     Window pointer (and thus, the instance pointer) from GWLP_USERDATA. After doing
      *     some win32-esque checks (such as checking for close), we will call the Event::from_porc
      *     function to generate a list of Beetle events.
-     * 4). New events will be pushed into the Instance.
+     * 4). New events will have the event loop function called for them.
      */
 
     // if this is not a window, return
@@ -198,7 +195,14 @@ pub unsafe extern "system" fn beetle_wndproc(
 
     // get the events and set the instance's buffer
     let events = Event::from_porc(instance, window, msg, wparam, lparam);
-    instance.porcupine_set_next_events(events); // forward the error to the actual Rust part
+    match events {
+        Ok(events) => {
+            if let Err(e) = instance.process_events(&events) {
+                instance.delay_error(e);
+            }
+        }
+        Err(e) => instance.delay_error(e),
+    }
 
     // just forward the event to DefWindowProcA now
     DefWindowProcA(hwnd, msg, wparam, lparam)

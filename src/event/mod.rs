@@ -134,6 +134,8 @@ pub enum EventData {
     Str(&'static str),
 }
 
+unsafe impl Send for EventData {}
+
 impl EventData {
     /// Get the type of the event from the data.
     #[inline]
@@ -168,6 +170,9 @@ pub struct Event {
     hidden_data: Option<Arc<dyn Any + Send + Sync + 'static>>,
     needs_quit: bool,
 }
+
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
 
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

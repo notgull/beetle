@@ -43,6 +43,7 @@
  * ----------------------------------------------------------------------------------
  */
 
+use alloc::string::String;
 use core::{fmt, num::TryFromIntError};
 #[cfg(target_os = "linux")]
 use flutterbug::FlutterbugError;
@@ -73,6 +74,7 @@ impl fmt::Display for InvalidColor {
 #[derive(Debug)]
 pub enum Error {
     StaticMsg(&'static str),
+    Msg(String),
     #[cfg(target_os = "linux")]
     Flutter(FlutterbugError),
     #[cfg(windows)]
@@ -106,6 +108,7 @@ impl fmt::Display for Error {
 
         match self {
             Self::StaticMsg(s) => f.pad(s),
+            Self::Msg(ref s) => f.pad(s),
             Self::TryFromInt(ref i) => fmt::Display::fmt(i, f),
             Self::WindowNotFound => f.pad("Unable to find window in window mappings"),
             Self::KeysymNotFound => f.pad("Unable to find key symbol corresponding to input"),
