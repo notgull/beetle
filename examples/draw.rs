@@ -72,7 +72,7 @@ fn deadlock_detector() {
 
 
 fn main() -> Result<()> {
-    env::set_var("RUST_LOG", "beetle=warn");
+    env::set_var("RUST_LOG", "draw=trace,beetle=warn,porcupine=warn");
     env_logger::init();
 
     deadlock_detector();
@@ -88,6 +88,7 @@ fn main() -> Result<()> {
         let event = instance.next_event()?;
  
         if let EventData::Paint(ref g) = event.data() {
+            log::info!("Beginning draw");
             g.draw_line(point2(10, 10), point2(50, 70))?;
         }
 

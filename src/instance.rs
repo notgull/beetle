@@ -45,7 +45,7 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, GenericWindowInternal, Texture, Window,
+    Event, EventData, GenericWindowInternal, Texture, Window,
 };
 use alloc::{collections::VecDeque, string::String, sync::Arc};
 use core::{fmt, mem, option::Option};
@@ -134,15 +134,28 @@ impl Instance {
         bounds: Rect<u32>,
         background: Option<Texture>,
     ) -> crate::Result<Window> {
-        cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
-                self.flutterbug_create_window(parent, text, bounds, background, parent.is_none())
-            } else if #[cfg(windows)] {
-                self.porcupine_create_window(parent, text, bounds, background, parent.is_none())
-            } else {
-                unimplemented!()
+        #[inline]
+        fn create_window_np(
+            this: &Instance,
+            parent: Option<&Window>,
+            text: String,
+            bounds: Rect<u32>,
+            background: Option<Texture>,
+        ) -> crate::Result<Window> {
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "linux")] {
+                    this.flutterbug_create_window(parent, text, bounds, background, parent.is_none())
+                } else if #[cfg(windows)] {
+                    this.porcupine_create_window(parent, text, bounds, background, parent.is_none())
+                } else {
+                    unimplemented!()
+                }
             }
         }
+
+        let w = create_window_np(self, parent, text, bounds, background)?;
+        w.set_bounds(bounds)?;
+        Ok(w)
     }
 
     /// Queue an event into the event queue.
@@ -272,6 +285,7 @@ impl Instance {
             None,
         );
         self.flutterbug_add_window(ex_id, &w);
+
         Ok(w)
     }
 }

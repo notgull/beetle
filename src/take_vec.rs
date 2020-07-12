@@ -59,7 +59,7 @@ pub struct TakeVec<T: Clone> {
 
 impl<T: fmt::Debug + Clone> fmt::Debug for TakeVec<T> {
     #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TakeVec")
             .field("value", &self.value)
             .field("capacity", &self.capacity)

@@ -479,25 +479,35 @@ impl Window {
     /// Display the window.
     #[inline]
     pub fn show(&self) -> crate::Result<()> {
-        cfg_if::cfg_if! {
-            if #[cfg(windows)] {
-                use core::mem;
+        #[inline]
+        fn show_no_repaint(this: &Window) -> crate::Result<()> {
+            cfg_if::cfg_if! {
+                if #[cfg(windows)] {
+                    use core::mem;
 
-                // clone the window out of the lock
-                let l = self.inner_window()?;
-                let w = l.inner_porc_window().weak_reference();
-                mem::drop(l);
+                    // clone the window out of the lock
+                    let l = this.inner_window()?;
+                    let w = l.inner_porc_window().weak_reference();
+                    mem::drop(l);
 
-                w.show(porcupine::CmdShow::Show);
-                w.update()?;
-                Ok(())
-            } else {
-                self.inner
-                    .try_read()
-                    .ok_or_else(|| crate::Error::UnableToRead)?
-                    .show()
+                    w.show(porcupine::CmdShow::Show);
+                    w.update()?;
+                    Ok(())
+                 } else {
+                    this.inner
+                        .try_read()
+                        .ok_or_else(|| crate::Error::UnableToRead)?
+                        .show()
+                }
             }
         }
+
+        show_no_repaint(self)?;
+        self.instance.queue_event(Event::new(
+            self,
+            EventData::Paint(crate::Graphics::from_window(self)?),
+        ));
+        Ok(())
     }
 
     /// Force a repaint operation on the window.
