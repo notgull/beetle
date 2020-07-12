@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/window/id.rs - Generate a unique global ID for each window.
+ * src/instance/internal/flutter.rs - Backend instance for Flutterbug
  * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
@@ -43,11 +43,75 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::{
+    mutexes::{Mutex, RwLock},
+    Event, Instance, Pixel, Texture, Window,
+};
+use flutterbug::{prelude::*, x11::xlib::Window as WindowID, Atom, Display, InputMethod};
+use hashbrown::HashMap;
+use smallvec::SmallVec;
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+const DELETE_WINDOW_ATOM: usize = 0;
 
-#[inline]
-pub fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::SeqCst)
+pub struct FlutterII {
+    connection: Display,
+    atoms: [Atom; 1],
+    im: InputMethod,
+    window_mappings: RwLock<HashMap<WindowID, Window>>,
+}
+
+impl FlutterII {
+    #[inline]
+    pub fn new() -> crate::Result<Self> {
+        let dpy = Display::new()?;
+
+        Ok(Self {
+            window_mappings: RwLock::new(HashMap::new()),
+            atoms: [dpy.internal_atom("WM_DELETE_WINDOW", false)?],
+            im: dpy.input_method()?,
+            connection: dpy,
+        })
+    }
+
+    #[inline]
+    fn delete_window_atom(&self) -> Atom {
+        self.atoms[DELETE_WINDOW_ATOM]
+    }
+
+    #[inline]
+    pub fn fl_get_window(&self, winid: WindowID) -> Option<Window> {
+        match self.window_mappings.try_read() {
+            Ok(wm) => wm.get(&winid).cloned(),
+            Err(e) => {
+                log::error!("Unable to acquire read access to Flutterbug window mappings: {}", e);
+                None
+            }
+        }
+    }
+}
+
+impl super::GenericInternalInstance for FlutterII {
+    fn create_window(
+        &self,
+        parent: Option<&Window>,
+        text: String,
+        bounds: Rect<u32, Pixel>,
+        background: Option<Texture>,
+        instance_ref: Instance,
+    ) -> crate::Result<Window> {
+        let fiw = crate::window::flutter::FlutterIW::new(
+            &self.connection,
+            self.delete_window_atom(),
+            parent,
+            &text,
+            bounds,
+        )?;
+        Ok(Window::from_raw(
+            RwLock::new(crate::window::InternalInstance::Flutter(fiw)),
+            Mutex::new(crate::window::WindowProperties::new(
+                text, bounds, background,
+            )),
+            instance_ref,
+        ))
+    }
 }

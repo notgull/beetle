@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
  * src/lib.rs - Root of the Beetle library.
- * porcupine - Safe wrapper around the graphical parts of Win32.
+ * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -67,6 +67,7 @@ pub mod arc;
 pub mod color;
 pub mod error;
 pub mod event;
+pub mod geometry;
 pub mod graphics;
 pub mod instance;
 pub mod keyboard;
@@ -82,6 +83,7 @@ pub use arc::*;
 pub use color::*;
 pub use error::*;
 pub use event::*;
+pub use geometry::*;
 pub use graphics::*;
 pub use instance::*;
 pub use keyboard::*;

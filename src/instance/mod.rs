@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/instance.rs - Instance of the Beetle window factory.
+ * src/instance/mod.rs - Instance of the Beetle window factory.
  * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
@@ -55,8 +55,16 @@ use hashbrown::{HashMap, HashSet};
 use porcupine::prelude::*;
 use smallvec::SmallVec;
 
-struct InstanceInternal {
+#[cfg(feature = "expose_internals")]
+pub mod internal;
+#[cfg(not(feature = "expose_internals"))]
+pub(crate) mod internal;
+
+mod loader;
+
+struct InstanceInner {
     event_queue: Mutex<VecDeque<Event>>,
+    backend: internal::InternalInstance,
 
     #[cfg(target_os = "linux")]
     window_mappings: Mutex<HashMap<WindowID, Window>>,
@@ -78,7 +86,7 @@ struct InstanceInternal {
 /// The Instance object is used to abstract over the connection to the GUI server
 /// that is needed to create windows and widgets.
 #[repr(transparent)]
-pub struct Instance(Arc<InstanceInternal>);
+pub struct Instance(Arc<InstanceInner>);
 
 impl fmt::Debug for Instance {
     #[inline]

@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/window/id.rs - Generate a unique global ID for each window.
+ * src/instance/internal/mod.rs - Internal interface used by the Instance.
  * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
@@ -43,11 +43,44 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::{Event, Pixel, Texture, Window};
+use alloc::string::String;
+use euclid::Rect;
+use smallvec::SmallVec;
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "linux")]
+pub mod flutter;
+#[cfg(windows)]
+pub mod porc;
 
-#[inline]
-pub fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::SeqCst)
+/// Internal interface used by the instance.
+pub trait GenericInternalInstance {
+    fn create_window(
+        &self,
+        parent: Option<&Window>,
+        text: String,
+        bounds: Rect<u32, Pixel>,
+        background: Option<Texture>,
+    ) -> crate::Result<Window>;
+
+    fn hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>>;
+}
+
+/// Storage for the internal instance;
+pub enum InternalInstance {
+    #[cfg(windows)]
+    Porc(porc::PorcII),
+    #[cfg(target_os = "linux")]
+    Flutter(flutter::FlutterII),
+}
+
+impl InternalInstance {
+    pub fn generic(&self) -> &dyn GenericInternalInstance {
+        match self {
+            #[cfg(windows)]
+            Self::Porc(ref p) => p,
+            #[cfg(target_os = "linux")]
+            Self::Flutter(ref f) => f,
+        }
+    }
 }

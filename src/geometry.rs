@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/window/id.rs - Generate a unique global ID for each window.
+ * src/geometry.rs - Units for geometry in Beetle.
  * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
@@ -43,11 +43,6 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
-#[inline]
-pub fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::SeqCst)
-}
+/// A unit representing a single pixel.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Pixel;

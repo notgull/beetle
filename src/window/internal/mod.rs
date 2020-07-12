@@ -1,6 +1,7 @@
 /* -----------------------------------------------------------------------------------
- * src/window/internal/mod.rs - Traits and definitions for the internal window.
- * beetle - Pull-based GUI framework.
+ * src/window/internal/mod.rs - Define a wrapper around the backended internals
+ *                              for the window.
+ * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,90 +44,38 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub(crate) use super::{unique_id, Window};
-use crate::{Event, EventType, Instance, Texture};
-use alloc::string::String;
-use euclid::default::Rect;
+use super::Window;
+use crate::{Instance, Pixel, Texture};
+use alloc::boxed::Box;
+use euclid::Rect;
 
-#[cfg(target_os = "linux")]
-mod flutter;
-#[cfg(target_os = "linux")]
-use flutter::WindowInternal as _WindowInternal;
-
-#[cfg(windows)]
-mod porc;
-#[cfg(windows)]
-use porc::WindowInternal as _WindowInternal;
-
-pub trait EventHandler = Fn(&Event) -> crate::Result<()> + Sync + Send + 'static;
-
-pub(crate) fn default_event_handler(_ev: &Event) -> crate::Result<()> {
-    log::debug!("Found event: {:?}", _ev);
-    Ok(())
-}
-
-/// Public functions of an internal window.
-pub trait GenericWindowInternal: Sized {
-    /// Get a unique ID identifying this window.
-    fn id(&self) -> usize;
-
-    /// Create a new version of this window.
-    fn new(
-        instance: &Instance,
-        parent: Option<&Window>,
-        text: String,
-        bounds: Rect<u32>,
-        background: Option<Texture>,
-        top_level: bool,
-    ) -> crate::Result<Self>;
-
-    /// Respond to an event.
-    #[inline]
-    fn handle_event(&self, event: &Event) -> crate::Result<()> {
-        // run the default event handler after everything is done
-        (self.event_handler())(event)
-    }
-
-    /// Receive certain types of events.
-    fn receive_events(&self, events: &[EventType]) -> crate::Result<()>;
-
-    /// Get the current event handler.
-    fn event_handler(&self) -> &dyn EventHandler;
-
-    /// Set the event handler.
-    fn set_event_handler<F: EventHandler>(&mut self, evh: F);
-
-    /// Get the text associated with this window. This can either be the title bar or
-    /// the text contained within.
-    fn text(&self) -> &str;
-
-    /// Set the text associated with this window.
-    fn set_text(&mut self, txt: String) -> crate::Result<String>;
-
-    /// Get the texture used for the background of this window.
-    fn background(&self) -> Option<&Texture>;
-
-    /// Set the texture used for the background of this window.
-    fn set_background(&mut self, texture: Option<Texture>);
-
-    /// Take the background.
-    fn take_background(&mut self) -> Option<Texture>;
-
-    /// Get the bounds of this window.
-    fn bounds(&self) -> Rect<u32>;
-
-    /// Set the bounds of this window.
-    fn set_bounds(&mut self, bounds: Rect<u32>, backend: bool) -> crate::Result<Rect<u32>>;
-
-    /// Tell if the window is a top-level window (read: closing it means the whole application should be closed)
-    fn is_top_level(&self) -> bool;
-
-    /// Display the window.
+/// Methods that every internal window is expected to provide.
+pub trait GenericInternalWindow {
+    /// Show this window.
     fn show(&self) -> crate::Result<()>;
-
-    /// Repaint the window.
-    fn repaint(&self, bounds: Option<Rect<u32>>) -> crate::Result<()>;
 }
 
-/// The internal window
-pub type WindowInternal = _WindowInternal;
+#[cfg(feature = "linux")]
+pub mod flutter;
+#[cfg(windows)]
+pub mod porc;
+
+/// Internal storage for the window backend.
+pub enum InternalWindow {
+    #[cfg(windows)]
+    Porcupine(porc::PorcIW),
+    #[cfg(target_os = "linux")]
+    Flutter(flutter::FlutterIW),
+}
+
+impl InternalWindow {
+    /// Get a reference to the internal window.
+    pub fn generic(&self) -> &dyn GenericInternalWindow {
+        match self {
+            #[cfg(windows)]
+            Self::Porcupine(ref p) => p,
+            #[cfg(target_os = "linux")]
+            Self::Flutter(ref f) => f,
+        }
+    }
+}

@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/window/id.rs - Generate a unique global ID for each window.
+ * src/instance/internal/mod.rs - Internal interface used by the Instance.
  * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
@@ -43,11 +43,14 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use alloc::string::String;
+use crate::{Event, Texture, Window, Pixel};
+use euclid::Rect;
+use smallvec::SmallVec;
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+/// Internal interface used by the instance.
+pub trait InternalInstance {
+    fn create_window(&self, parent: Option<&Window>, text: String, bounds: Rect<u32, Pixel>, background: Option<Texture>) -> crate::Result<Window>;
 
-#[inline]
-pub fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::SeqCst)
+    fn hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>>;
 }

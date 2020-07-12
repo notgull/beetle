@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------------
- * src/window/id.rs - Generate a unique global ID for each window.
+ * src/instance/loader.rs - Functions to load the backend for the Beetle library.
  * beetle - Pull-based GUI framework
  * Copyright © 2020 not_a_seagull
  *
@@ -43,11 +43,33 @@
  * ----------------------------------------------------------------------------------
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use super::internal::{self, InternalInstance};
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
+/// Load the fallback Instance for the current system.
 #[inline]
-pub fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::SeqCst)
+fn load_fallback() -> crate::Result<InternalInstance> {
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            Ok(InternalInstance::Porc(internal::porc::PorcII::new()?))
+        } else if #[cfg(target_os = "linux")] {
+            Ok(InternalInstance::Flutter(internal::flutter::FlutterII::new()?))
+        } else {
+            unimplemented!()
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+#[inline]
+pub fn load() -> crate::Result<InternalInstance> {
+    // TODO: dynamic loading
+    load_fallback()
+}
+
+#[cfg(not(feature = "std"))]
+#[inline]
+pub fn load() -> crate::Result<InternalInstance> {
+    // since we can't dynamically load on no_std,
+    // just load the fallback option
+    load_fallback()
 }
