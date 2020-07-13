@@ -47,6 +47,7 @@ use crate::{
     mutexes::{Mutex, RwLock},
     Event, Instance, Pixel, Texture, Window,
 };
+use alloc::collections::VecDeque;
 use flutterbug::{prelude::*, x11::xlib::Window as WindowID, Atom, Display, InputMethod};
 use hashbrown::HashMap;
 use smallvec::SmallVec;
@@ -79,11 +80,24 @@ impl FlutterII {
     }
 
     #[inline]
+    fn input_method(&self) -> &InputMethod {
+        &self.im
+    }
+
+    #[inline]
+    fn connection(&self) -> &Display {
+        &self.connection
+    }
+
+    #[inline]
     pub fn fl_get_window(&self, winid: WindowID) -> Option<Window> {
         match self.window_mappings.try_read() {
             Ok(wm) => wm.get(&winid).cloned(),
             Err(e) => {
-                log::error!("Unable to acquire read access to Flutterbug window mappings: {}", e);
+                log::error!(
+                    "Unable to acquire read access to Flutterbug window mappings: {}",
+                    e
+                );
                 None
             }
         }
@@ -91,6 +105,7 @@ impl FlutterII {
 }
 
 impl super::GenericInternalInstance for FlutterII {
+    #[inline]
     fn create_window(
         &self,
         parent: Option<&Window>,
@@ -107,11 +122,17 @@ impl super::GenericInternalInstance for FlutterII {
             bounds,
         )?;
         Ok(Window::from_raw(
-            RwLock::new(crate::window::InternalInstance::Flutter(fiw)),
+            RwLock::new(crate::window::InternalWindow::Flutter(fiw)),
             Mutex::new(crate::window::WindowProperties::new(
                 text, bounds, background,
             )),
             instance_ref,
         ))
+    }
+
+    #[inline]
+    fn hold_for_events(&self, output: &mut VecDeque<Event>) -> crate::Result<()> {
+        output.extend(Event::from_flutter(self, &self.connection)?);
+        Ok(())
     }
 }

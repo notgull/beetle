@@ -43,4 +43,89 @@
  * ----------------------------------------------------------------------------------
  */
 
-pub struct PorcII {}
+use crate::{
+    mutexes::{Mutex, RwLock},
+    Event, Instance, Pixel, Texture, Window,
+};
+use alloc::{collections::VecDeque, string::String};
+use euclid::Rect;
+use hashbrown::HashMap;
+use porcupine::winapi::HWND;
+use smallvec::{smallvec, SmallVec};
+
+pub struct PorcII {
+    window_mappings: RwLock<HashMap<usize, Window>>,
+    next_events: Mutex<SmallVec<[crate::Result<SmallVec<[Event; 2]>>; 1]>>,
+}
+
+impl PorcII {
+    #[inline]
+    pub fn new() -> crate::Result<Self> {
+        // win32 doesn't really have a connection object like X11 does
+        // however, we do well to initialize CommCtrl here
+        porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
+
+        Ok(Self(Arc::new(InstanceInternal {
+            window_mappings: RwLock::new(HashMap::new()),
+            next_events: Mutex::new(SmallVec::new()),
+        })))
+    }
+
+    #[inline]
+    pub fn pc_get_window(&self, ptr: HWND) -> Option<Window> {
+        match self.window_mappings.try_read() {
+            Ok(wm) => {
+                let ex_id = ptr as *const () as usize;
+                wm.get(&ex_id).cloned()
+            }
+            Err(e) => {
+                log::error!(
+                    "Unable to acquire read access to Porcupine window mappings: {}",
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    #[inline]
+    pub fn pc_set_next_events(&self, ne: crate::Result<SmallVec<[Event; 2]>>) {
+        let mut l = self.next_events.lock();
+        l.push(ne);
+    }
+}
+
+impl super::GenericInternalInstance for PorcII {
+    #[inline]
+    fn create_window(
+        &self,
+        parent: Option<&Window>,
+        text: String,
+        bounds: Rect<u32, Pixel>,
+        background: Option<Texture>,
+        instance_ref: Instance,
+    ) -> crate::Result<Window> {
+        let piw = crate::window::PorcIW::new(parent, &text, bounds)?;
+        Ok(Window::from_raw(
+            RwLock::new(crate::window::InternalWindow::Porc(piw)),
+            Mutex::new(crate::window::WindowProperties::new(
+                text, bounds, background,
+            )),
+            instance_ref,
+        ))
+    }
+
+    #[inline]
+    fn hold_for_events(&self, output: &mut VecDeque<Event>) -> crate::Result<()> {
+        let mut ne = self.next_events.lock();
+        output.extend(
+            ne.drain(..)
+                .flat_map(|el| match el {
+                    Ok(e) => e.into_iter().map(Result::Ok),
+                    Err(err) => smallvec![Err(err)].into_iter(),
+                })
+                .collect::<crate::Result<SmallVec<[Event; 2]>>>()?,
+        );
+        Ok(())
+    }
+}

@@ -65,20 +65,6 @@ mod loader;
 struct InstanceInner {
     event_queue: Mutex<VecDeque<Event>>,
     backend: internal::InternalInstance,
-
-    #[cfg(target_os = "linux")]
-    window_mappings: Mutex<HashMap<WindowID, Window>>,
-    #[cfg(target_os = "linux")]
-    connection: flutterbug::Display,
-    #[cfg(target_os = "linux")]
-    atoms: [flutterbug::Atom; 1],
-    #[cfg(target_os = "linux")]
-    im: flutterbug::InputMethod,
-
-    #[cfg(windows)]
-    window_mappings: Mutex<HashMap<usize, Window>>,
-    #[cfg(windows)]
-    next_events: Mutex<SmallVec<[crate::Result<SmallVec<[Event; 2]>>; 1]>>,
 }
 
 /// An instance of the Beetle GUI window factory.
@@ -121,15 +107,12 @@ impl Instance {
     /// question, as well as initializes the window map and event queue.
     #[inline]
     pub fn new() -> crate::Result<Instance> {
-        cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
-                Self::flutterbug_new()
-            } else if #[cfg(windows)] {
-                Self::porcupine_new()
-            } else {
-                unimplemented!()
-            }
-        }
+        // use the loader to dynamically load the internal instance,
+        // or any required libraries
+        Ok(Self(Arc::new(InstanceInner {
+            event_queue: Mutex::new(VecDeque::new()),
+            backend: loader::load()?,
+        })))
     }
 
     /// Create a new window. This function initializes the window (or equivalent) in
@@ -150,15 +133,7 @@ impl Instance {
             bounds: Rect<u32>,
             background: Option<Texture>,
         ) -> crate::Result<Window> {
-            cfg_if::cfg_if! {
-                if #[cfg(target_os = "linux")] {
-                    this.flutterbug_create_window(parent, text, bounds, background, parent.is_none())
-                } else if #[cfg(windows)] {
-                    this.porcupine_create_window(parent, text, bounds, background, parent.is_none())
-                } else {
-                    unimplemented!()
-                }
-            }
+            this.0.backend.generic().create_window(parent, text, bounds, background, this.clone())
         }
 
         let w = create_window_np(self, parent, text, bounds, background)?;
@@ -176,46 +151,21 @@ impl Instance {
     #[inline]
     pub fn queue_events<I: IntoIterator<Item = Event>>(&self, evs: I) {
         let mut evq = self.0.event_queue.lock();
-        evs.into_iter().for_each(|e| evq.push_back(e));
+        evq.extend(evs);
     }
 
     /// Get the next event.
     #[inline]
     pub fn next_event(&self) -> crate::Result<Event> {
-        #[inline]
-        fn hold_for_events(this: &Instance) -> crate::Result<SmallVec<[Event; 2]>> {
-            cfg_if::cfg_if! {
-                if #[cfg(target_os = "linux")] {
-                    Event::from_flutter(this, flutterbug::Event::next(&this.0.connection)?)
-                } else if #[cfg(windows)] {
-                    this.porcupine_hold_for_events()
-                } else {
-                    unimplemented!()
+        let mut evq = self.0.event_queue.lock(); // option so we can drop it
+        loop {
+            match evq.pop_front() {
+                Some(ev) => return Ok(ev),
+                None => {
+                    self.0.backend.generic().hold_for_events(&mut evq)?;
                 }
             }
-        }
-
-        let mut evq = self.0.event_queue.lock();
-        match evq.pop_front() {
-            Some(ev) => Ok(ev),
-            None => {
-                mem::drop(evq); // hold_for_events might need the mutex
-
-                // hold for the next event
-                let mut ne: Option<Event> = None;
-                while ne.is_none() {
-                    let mut new_evs = hold_for_events(self)?;
-                    let mut drain = new_evs
-                        .drain(..)
-                        .filter(|e| e.window().receives_event(&e.ty()));
-                    let mut evq = self.0.event_queue.lock();
-
-                    ne = drain.next();
-                    drain.for_each(|ev| evq.push_back(ev));
-                }
-                Ok(ne.unwrap())
-            }
-        }
+        } 
     }
 }
 

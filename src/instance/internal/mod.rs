@@ -43,8 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
+use super::Instance;
 use crate::{Event, Pixel, Texture, Window};
-use alloc::string::String;
+use alloc::{collections::VecDeque, string::String};
 use euclid::Rect;
 use smallvec::SmallVec;
 
@@ -61,9 +62,10 @@ pub trait GenericInternalInstance {
         text: String,
         bounds: Rect<u32, Pixel>,
         background: Option<Texture>,
+        instance_ref: Instance,
     ) -> crate::Result<Window>;
 
-    fn hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>>;
+    fn hold_for_events(&self, output: &mut VecDeque<Event>) -> crate::Result<()>;
 }
 
 /// Storage for the internal instance;
