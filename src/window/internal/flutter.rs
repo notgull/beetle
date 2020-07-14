@@ -42,3 +42,107 @@
  * limitations under the License.
  * ----------------------------------------------------------------------------------
  */
+
+use core::convert::TryInto;
+use crate::{Pixel, Window};
+use euclid::{Point2D, Rect, Size2D};
+use flutterbug::{
+    prelude::*, Atom, Display, EventMask, InputContext, InputMethod, Window as FWindow,
+};
+
+pub struct FlutterIW {
+    inner: FWindow,
+    ic: InputContext,
+}
+
+#[inline]
+fn fl_compat_rect(
+    r: Rect<u32, Pixel>,
+) -> crate::Result<(euclid::default::Point2D<i32>, euclid::default::Size2D<u32>)> {
+    let pt = Point2D::new(r.origin.x.try_into()?, r.origin.y.try_into()?);
+    let sz = Size2D::new(r.size.width, r.size.height);
+    Ok((pt, sz))
+}
+
+// macro for determining which event masks to apply
+macro_rules! default_event_mask {
+    ($itl: expr) => {{
+        let mut dem = EventMask::EXPOSURE_MASK;
+
+        if $itl {
+            dem |= EventMask::RESIZE_REQUEST_MASK;
+        }
+
+        dem
+    }};
+}
+
+impl FlutterIW {
+    // create a new flutterbug window
+    #[inline]
+    pub fn new(
+        dpy: &Display,
+        im: &InputMethod,
+        dwp: Atom,
+        parent: Option<&Window>,
+        text: &str,
+        bounds: Rect<u32, Pixel>,
+    ) -> crate::Result<Self> {
+        let (pt, sz) = fl_compat_rect(bounds)?;
+        let inner = dpy.create_simple_window(
+            match parent {
+                Some(w) => Some(
+                    w.fl_inner_window()
+                        .ok_or_else(|| crate::Error::WindowMismatch)?,
+                ),
+                None => None,
+            },
+            pt,
+            sz,
+            1,
+            dpy.default_white_pixel()?,
+            dpy.default_white_pixel()?,
+        )?;
+
+        inner.set_protocols(&mut [dwp])?;
+        inner.store_name(text)?;
+        inner.select_input(EventMask::EXPOSURE_MASK)?;
+        inner.set_position(pt)?;
+
+        Ok(Self {
+            ic: inner.input_context(im)?,
+            inner,
+        })
+    }
+
+    #[inline]
+    pub fn fl_window(&self) -> &FWindow {
+        &self.inner
+    }
+
+    #[inline]
+    pub fn ic(&self) -> &InputContext {
+        &self.ic
+    }
+}
+
+impl super::GenericInternalWindow for FlutterIW {
+    #[inline]
+    fn show(&self) -> crate::Result<()> {
+        self.inner.map(true)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_size(&self, size: Size2D<u32, Pixel>) -> crate::Result<()> {
+        self.inner
+            .set_bounds(Size2D::new(size.width, size.height))?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_text(&self, text: &str) -> crate::Result<()> {
+        self.inner.store_name(text)?;
+        Ok(())
+    }
+}

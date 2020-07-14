@@ -44,7 +44,7 @@
  */
 
 mod id;
-mod internal;
+pub(crate) mod internal;
 #[cfg(feature = "expose_internal")]
 pub use internal::*;
 #[cfg(not(feature = "expose_internal"))]
@@ -52,14 +52,14 @@ pub(crate) use internal::*;
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    EventType, Pixel, Texture,
+Event, Instance, EventData,    EventType, InstanceType, Pixel, Texture,
 };
 use alloc::{string::String, sync::Arc};
 use core::{
     fmt,
     hash::{Hash, Hasher},
 };
-use euclid::Rect;
+use euclid::{Point2D, Rect, Size2D};
 use hashbrown::HashSet;
 
 /// Miscellaneous properties a window can hold.
@@ -67,22 +67,28 @@ pub(crate) struct WindowProperties {
     text: String,
     bounds: Rect<u32, Pixel>,
     background: Option<Texture>,
+    is_top_level: bool,
 }
 
 impl WindowProperties {
-    pub fn new(text: String, bounds: Rect<u32, Pixel>, background: Option<Texture>) -> Self {
+    pub fn new(
+        text: String,
+        bounds: Rect<u32, Pixel>,
+        background: Option<Texture>,
+        is_top_level: bool,
+    ) -> Self {
         Self {
             text,
             bounds,
             background,
+            is_top_level,
         }
     }
 }
 
 struct WindowInner {
     // the backend window
-    // write access isn't needed that often, but read access isso we use an RwLock
-    backend: RwLock<internal::InternalWindow>,
+    backend: internal::InternalWindow,
     // the properties held by the window. write access is needed a lot, so a Mutex is used.
     properties: Mutex<WindowProperties>,
     // due to the ID's copy status, we keep it in the inner window
@@ -108,10 +114,10 @@ impl Clone for Window {
 
 impl fmt::Debug for Window {
     #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Window")
-            .field("id", self.0.id)
-            .field("instance", self.1)
+            .field("id", &self.0.id)
+            .field("instance", &self.1)
             .finish()
     }
 }
@@ -119,7 +125,7 @@ impl fmt::Debug for Window {
 impl Hash for Window {
     #[inline]
     fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self.id, h)
+        Hash::hash(&self.0.id, h)
     }
 }
 
@@ -135,17 +141,17 @@ impl Eq for Window {}
 impl Window {
     /// Create a new window from the raw parts.
     pub(crate) fn from_raw(
-        backend: RwLock<internal::InternalWindow>,
+        backend: internal::InternalWindow,
         properties: Mutex<WindowProperties>,
         instance: Instance,
     ) -> Self {
         Self(
-            WindowInner {
+            Arc::new(WindowInner {
                 backend,
                 properties,
                 events_received: RwLock::new(HashSet::new()),
                 id: id::unique_id(),
-            },
+            }),
             instance,
         )
     }
@@ -154,5 +160,112 @@ impl Window {
     #[inline]
     pub fn id(&self) -> usize {
         self.0.id
+    }
+
+    /// Get whether this is a top-level window.
+    #[inline]
+    pub fn is_top_level(&self) -> bool {
+        self.0.properties.lock().is_top_level
+    }
+
+    /// Get the current bounds of this window.
+    #[inline]
+    pub fn bounds(&self) -> Rect<u32, Pixel> {
+        self.0.properties.lock().bounds
+    }
+
+    /// Get the current size of this window.
+    #[inline]
+    pub fn size(&self) -> Size2D<u32, Pixel> {
+        self.bounds().size
+    }
+
+    /// Set the size, and choose whether or not to emit a backend message.
+    #[inline]
+    pub(crate) fn set_size_emit_choice(
+        &self,
+        bounds: Size2D<u32, Pixel>,
+        emit: bool,
+    ) -> crate::Result<()> {
+        self.0.properties.lock().bounds.size = bounds;
+
+        if emit {
+            match (self.is_top_level(), self.1.ty()) {
+                (true, InstanceType::Flutterbug) => {
+                    // just produce a Resizing event
+                    let mut rev = Event::new(
+                        self,
+                        EventData::Resizing {
+                            old: self.size(),
+                            new: RwLock::new(bounds),
+                        },
+                    );
+                    // the hidden data bool indicates whether we should release a SizeChanged event
+                    // since we are handling it manually, it is true
+                    rev.set_hidden_data(true);
+                    self.1.queue_event(rev);
+                    Ok(())
+                }
+                (_, _) => {
+                    // otherwise, just resize the window on the backend
+                    self.backend().set_size(bounds)
+                }
+            }
+        } else { Ok(()) }
+    }
+
+    /// Set the size of this window.
+    #[inline]
+    pub fn set_size(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()> {
+        self.set_size_emit_choice(bounds, true)
+    }
+
+    // helper function to get the generic backend
+    fn backend(&self) -> &dyn GenericInternalWindow {
+        self.0.backend.generic()
+    }
+
+    /// Receive an event.
+    #[inline]
+    pub fn handle_event(&self, event: Event) -> crate::Result<()> {
+        match event.data() {
+            EventData::Resizing { old: _, new } => {
+                if let Some(t) = event.hidden_data::<bool>() {
+                    if *t {
+                        // if we are handling the resize events, resize the window manually
+                        self.set_size_emit_choice(
+                            new.into_inner(),
+                            self.is_top_level() && self.1.ty() == InstanceType::Flutterbug,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Some handling for events needs to happen prior to dispatch.
+    #[inline]
+    pub(crate) fn handle_event_before_dispatch(&self, event: &Event) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Window {
+    pub(crate) fn fl_inner_window(&self) -> Option<&flutterbug::Window> {
+        match self.0.backend {
+            InternalWindow::Flutter(ref f) => Some(f.fl_window()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fl_input_context(&self) -> Option<&flutterbug::InputContext> {
+        match self.0.backend {
+            InternalWindow::Flutter(ref f) => Some(f.ic()),
+            _ => None,
+        }
     }
 }

@@ -47,15 +47,19 @@
 use super::Window;
 use crate::{Instance, Pixel, Texture};
 use alloc::boxed::Box;
-use euclid::Rect;
+use euclid::{Point2D, Size2D};
 
 /// Methods that every internal window is expected to provide.
 pub trait GenericInternalWindow {
     /// Show this window.
     fn show(&self) -> crate::Result<()>;
+    /// Set the size of this window.
+    fn set_size(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()>;
+    /// Set the text associated with the window.
+    fn set_text(&self, text: &str) -> crate::Result<()>;
 }
 
-#[cfg(feature = "linux")]
+#[cfg(target_os = "linux")]
 pub mod flutter;
 #[cfg(windows)]
 pub mod porc;

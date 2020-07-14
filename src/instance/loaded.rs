@@ -1,6 +1,6 @@
 /* -----------------------------------------------------------------------------------
- * src/instance/internal/mod.rs - Internal interface used by the Instance.
- * beetle - Pull-based GUI framework
+ * src/instance/loaded.rs - The types of instances that can be loaded.
+ * beetle - Pull-based GUI framework.
  * Copyright © 2020 not_a_seagull
  *
  * This project is licensed under either the Apache 2.0 license or the MIT license, at
@@ -43,55 +43,9 @@
  * ----------------------------------------------------------------------------------
  */
 
-use super::{Instance, InstanceType};
-use crate::{Event, Pixel, Texture, Window};
-use alloc::{collections::VecDeque, string::String};
-use euclid::Rect;
-use smallvec::SmallVec;
-
-#[cfg(target_os = "linux")]
-pub mod flutter;
-#[cfg(windows)]
-pub mod porc;
-
-/// Internal interface used by the instance.
-pub trait GenericInternalInstance {
-    fn create_window(
-        &self,
-        parent: Option<&Window>,
-        text: String,
-        bounds: Rect<u32, Pixel>,
-        background: Option<Texture>,
-        instance_ref: Instance,
-    ) -> crate::Result<Window>;
-
-    fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()>;
-}
-
-/// Storage for the internal instance;
-pub enum InternalInstance {
-    #[cfg(windows)]
-    Porc(porc::PorcII),
-    #[cfg(target_os = "linux")]
-    Flutter(flutter::FlutterII),
-}
-
-impl InternalInstance {
-    pub fn generic(&self) -> &dyn GenericInternalInstance {
-        match self {
-            #[cfg(windows)]
-            Self::Porc(ref p) => p,
-            #[cfg(target_os = "linux")]
-            Self::Flutter(ref f) => f,
-        }
-    }
-
-    pub fn ty(&self) -> InstanceType {
-        match self {
-            #[cfg(windows)]
-            Self::Porc(_p) => InstanceType::Porcupine,
-            #[cfg(target_os = "linux")]
-            Self::Flutter(_f) => InstanceType::Flutterbug,
-        }
-    }
+/// The type of instance that is loaded.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum InstanceType {
+    Flutterbug,
+    Porcupine,
 }

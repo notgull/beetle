@@ -85,6 +85,7 @@ pub enum Error {
     WindowIDNoDowncast,
     UnableToWrite,
     UnableToRead,
+    WindowMismatch,
 }
 
 impl fmt::Display for Error {
@@ -112,6 +113,7 @@ impl fmt::Display for Error {
             Self::WindowIDNoDowncast => f.pad("Window ID did not downcast to a valid element"),
             Self::UnableToWrite => f.pad("Unable to write to RwLock"),
             Self::UnableToRead => f.pad("Unable to read from RwLock"),
+            Self::WindowMismatch => f.write_str("Windows are of two different types"),
             Self::InvalidColor(ref i) => fmt::Display::fmt(i, f),
             _ => unreachable!(),
         }

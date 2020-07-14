@@ -43,10 +43,10 @@
  * ----------------------------------------------------------------------------------
  */
 
-use crate::{Graphics, KeyInfo, MouseButton, Texture, Window};
+use crate::{mutexes::RwLock, Graphics, KeyInfo, MouseButton, Pixel, Texture, Window};
 use alloc::{string::String, sync::Arc, vec, vec::Vec};
 use core::{any::Any, fmt, option::Option};
-use euclid::default::{Point2D, Rect};
+use euclid::{Point2D, Rect, Size2D};
 
 #[cfg(target_os = "linux")]
 mod flutter;
@@ -74,10 +74,6 @@ pub enum EventType {
     Quit,
     /// A single window is closing.
     Close,
-    /// The window's bounds are being changed.
-    BoundsChanging,
-    /// The window's bounds have changed.
-    BoundsChanged,
     /// The window's background is being changed.
     BackgroundChanging,
     /// The window's background has been changed.
@@ -98,9 +94,9 @@ pub enum EventData {
     /// Nothing is happening. Often used as a transport for event data.
     NoOp,
     /// A key has been pressed.
-    KeyDown(KeyInfo, Option<Point2D<u32>>),
+    KeyDown(KeyInfo, Option<Point2D<u32, Pixel>>),
     /// A key has been released.
-    KeyUp(KeyInfo, Option<Point2D<u32>>),
+    KeyUp(KeyInfo, Option<Point2D<u32, Pixel>>),
     /// The window is about to be repainted.
     AboutToPaint,
     /// The window is being repainted.
@@ -113,10 +109,30 @@ pub enum EventData {
     Quit,
     /// A single window is closing.
     Close,
-    /// The window's bounds are being changed.
-    BoundsChanging { old: Rect<u32>, new: Rect<u32> },
-    /// The window's bounds have changed.
-    BoundsChanged { old: Rect<u32>, new: Rect<u32> },
+    /// The window is being resized.
+    ///
+    /// By mutating `new`, one can change which size the event resizes to.
+    Resizing {
+        old: Size2D<u32, Pixel>,
+        new: RwLock<Size2D<u32, Pixel>>,
+    },
+    /// The window has been resized.
+    Resized {
+        old: Size2D<u32, Pixel>,
+        new: Size2D<u32, Pixel>,
+    },
+    /// The window is being moved.
+    ///
+    /// By mutating `new`, one can change which point the event moves to.
+    Moving {
+        old: Point2D<u32, Pixel>,
+        new: RwLock<Point2D<u32, Pixel>>,
+    },
+    /// The window has been moved.
+    Moved {
+        old: Point2D<u32, Pixel>,
+        new: Point2D<u32, Pixel>,
+    },
     /// The window's background is being changed.
     BackgroundChanging {
         old: Option<Texture>,
@@ -125,9 +141,9 @@ pub enum EventData {
     /// The window's background has been changed.
     BackgroundChanged,
     /// The window has had a mouse button depressed on it.
-    MouseButtonDown(Point2D<u32>, MouseButton),
+    MouseButtonDown(Point2D<u32, Pixel>, MouseButton),
     /// The window has had a mouse button released on it.
-    MouseButtonUp(Point2D<u32>, MouseButton),
+    MouseButtonUp(Point2D<u32, Pixel>, MouseButton),
     /// A manual, integer event.
     Integer(usize),
     /// A manual, string event.

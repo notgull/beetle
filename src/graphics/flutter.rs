@@ -74,8 +74,7 @@ pub struct FlutterbugGraphics {
 impl FlutterbugGraphics {
     #[inline]
     pub fn new(window: &Window) -> crate::Result<Self> {
-        let inner_window = window.inner_window()?;
-        let inner_flutter = inner_window.inner_flutter_window();
+        let inner_flutter = window.fl_inner_window().unwrap();
         let dpy = inner_flutter.display_reference().clone();
 
         // set the defaults
@@ -133,8 +132,7 @@ impl InternalGraphics for FlutterbugGraphics {
     fn set_foreground(&self, clr: Color) -> crate::Result<()> {
         let clr = self.to_flcolor(clr)?;
 
-        let inner = self.window.inner_window()?;
-        inner.inner_flutter_window().set_foreground(clr)?;
+        self.window.fl_inner_window().unwrap().set_foreground(clr)?;
         self.color_info.lock().foreground = clr;
         Ok(())
     }
@@ -142,20 +140,14 @@ impl InternalGraphics for FlutterbugGraphics {
     #[inline]
     fn set_background(&self, clr: Color) -> crate::Result<()> {
         let clr = self.to_flcolor(clr)?;
-        self.window
-            .inner_window()?
-            .inner_flutter_window()
-            .set_background(clr)?;
+        self.window.fl_inner_window().unwrap().set_background(clr)?;
         self.color_info.lock().background = Some(clr);
         Ok(())
     }
 
     #[inline]
     fn set_line_width(&self, lw: u32) -> crate::Result<()> {
-        self.window
-            .inner_window()?
-            .inner_flutter_window()
-            .set_line_width(lw)?;
+        self.window.fl_inner_window().unwrap().set_line_width(lw)?;
         Ok(())
     }
 
@@ -167,8 +159,8 @@ impl InternalGraphics for FlutterbugGraphics {
         let y2: i32 = p2.y.try_into()?;
 
         self.window
-            .inner_window()?
-            .inner_flutter_window()
+            .fl_inner_window()
+            .unwrap()
             .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
         Ok(())
     }
@@ -178,8 +170,7 @@ impl InternalGraphics for FlutterbugGraphics {
         let origin = Point2D::<i32>::new(rect.origin.x.try_into()?, rect.origin.y.try_into()?);
         let size = rect.size;
 
-        let inner = self.window.inner_window()?;
-        let ifl = inner.inner_flutter_window();
+        let ifl = self.window.fl_inner_window().unwrap();
         ifl.draw_rectangle(origin, size)?;
 
         // temporarily switch the background color to the foreground so we
@@ -211,8 +202,7 @@ impl InternalGraphics for FlutterbugGraphics {
         let origin = Point2D::<i32>::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?);
         let size = bounds.size;
 
-        let inner = self.window.inner_window()?;
-        let ifl = inner.inner_flutter_window();
+        let ifl = self.window.fl_inner_window().unwrap();
         ifl.draw_arc(origin, size, angles)?;
 
         // fill if we need to

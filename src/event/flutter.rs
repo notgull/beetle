@@ -179,7 +179,7 @@ impl Event {
                     evs.push(Event::new(&assoc_window, EventData::Close));
 
                     // also send a quit event if this is the top-level window
-                    if assoc_window.is_top_level()? {
+                    if assoc_window.is_top_level() {
                         let mut quit_ev = Event::new(&assoc_window, EventData::Quit);
                         quit_ev.set_is_exit_event(true);
                         evs.push(quit_ev);

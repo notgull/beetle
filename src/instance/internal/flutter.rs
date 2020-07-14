@@ -47,7 +47,8 @@ use crate::{
     mutexes::{Mutex, RwLock},
     Event, Instance, Pixel, Texture, Window,
 };
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, string::String};
+use euclid::Rect;
 use flutterbug::{prelude::*, x11::xlib::Window as WindowID, Atom, Display, InputMethod};
 use hashbrown::HashMap;
 use smallvec::SmallVec;
@@ -92,12 +93,9 @@ impl FlutterII {
     #[inline]
     pub fn fl_get_window(&self, winid: WindowID) -> Option<Window> {
         match self.window_mappings.try_read() {
-            Ok(wm) => wm.get(&winid).cloned(),
-            Err(e) => {
-                log::error!(
-                    "Unable to acquire read access to Flutterbug window mappings: {}",
-                    e
-                );
+            Some(wm) => wm.get(&winid).cloned(),
+            None => {
+                log::error!("Unable to acquire read access to Flutterbug window mappings",);
                 None
             }
         }
@@ -114,25 +112,32 @@ impl super::GenericInternalInstance for FlutterII {
         background: Option<Texture>,
         instance_ref: Instance,
     ) -> crate::Result<Window> {
-        let fiw = crate::window::flutter::FlutterIW::new(
+        let fiw = crate::window::internal::flutter::FlutterIW::new(
             &self.connection,
+            &self.im,
             self.delete_window_atom(),
             parent,
             &text,
             bounds,
         )?;
         Ok(Window::from_raw(
-            RwLock::new(crate::window::InternalWindow::Flutter(fiw)),
+            crate::window::InternalWindow::Flutter(fiw),
             Mutex::new(crate::window::WindowProperties::new(
-                text, bounds, background,
+                text,
+                bounds,
+                background,
+                parent.is_none(),
             )),
             instance_ref,
         ))
     }
 
     #[inline]
-    fn hold_for_events(&self, output: &mut VecDeque<Event>) -> crate::Result<()> {
-        output.extend(Event::from_flutter(self, &self.connection)?);
+    fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()> {
+        output.extend(Event::from_flutter(
+            inst,
+            flutterbug::Event::next(&self.connection)?,
+        )?);
         Ok(())
     }
 }

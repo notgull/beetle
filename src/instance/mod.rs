@@ -45,11 +45,11 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, EventData, GenericWindowInternal, Texture, Window,
+    Event, EventData, Pixel, Texture, Window,
 };
 use alloc::{collections::VecDeque, string::String, sync::Arc};
 use core::{fmt, mem, option::Option};
-use euclid::default::Rect;
+use euclid::Rect;
 use hashbrown::{HashMap, HashSet};
 #[cfg(windows)]
 use porcupine::prelude::*;
@@ -60,7 +60,11 @@ pub mod internal;
 #[cfg(not(feature = "expose_internals"))]
 pub(crate) mod internal;
 
+use internal::*;
+
+mod loaded;
 mod loader;
+pub use loaded::*;
 
 struct InstanceInner {
     event_queue: Mutex<VecDeque<Event>>,
@@ -115,6 +119,12 @@ impl Instance {
         })))
     }
 
+    /// Get the type of library loaded by this Instance.
+    #[inline]
+    pub fn ty(&self) -> InstanceType {
+        self.0.backend.ty()
+    }
+
     /// Create a new window. This function initializes the window (or equivalent) in
     /// the backend that the Instance is targeting.
     #[inline]
@@ -122,7 +132,7 @@ impl Instance {
         &self,
         parent: Option<&Window>,
         text: String,
-        bounds: Rect<u32>,
+        bounds: Rect<u32, Pixel>,
         background: Option<Texture>,
     ) -> crate::Result<Window> {
         #[inline]
@@ -130,10 +140,13 @@ impl Instance {
             this: &Instance,
             parent: Option<&Window>,
             text: String,
-            bounds: Rect<u32>,
+            bounds: Rect<u32, Pixel>,
             background: Option<Texture>,
         ) -> crate::Result<Window> {
-            this.0.backend.generic().create_window(parent, text, bounds, background, this.clone())
+            this.0
+                .backend
+                .generic()
+                .create_window(parent, text, bounds, background, this.clone())
         }
 
         let w = create_window_np(self, parent, text, bounds, background)?;
@@ -160,12 +173,15 @@ impl Instance {
         let mut evq = self.0.event_queue.lock(); // option so we can drop it
         loop {
             match evq.pop_front() {
-                Some(ev) => return Ok(ev),
+                Some(ev) => {
+                    ev.window().handle_event_before_dispatch(&ev)?;
+                    return Ok(ev);
+                }
                 None => {
-                    self.0.backend.generic().hold_for_events(&mut evq)?;
+                    self.0.backend.generic().hold_for_events(&mut evq, self)?;
                 }
             }
-        } 
+        }
     }
 }
 
@@ -177,74 +193,34 @@ use flutterbug::x11::xlib::Window as WindowID;
 
 #[cfg(target_os = "linux")]
 impl Instance {
-    /// Create the flutterbug instance of the Beetle GUI factory.
-    fn flutterbug_new() -> crate::Result<Instance> {
-        use flutterbug::{prelude::*, Display};
-
-        let dpy = Display::new()?;
-
-        Ok(Self(Arc::new(InstanceInternal {
-            event_queue: Mutex::new(VecDeque::new()),
-            window_mappings: Mutex::new(HashMap::new()),
-            atoms: [dpy.internal_atom("WM_DELETE_WINDOW", false)?],
-            im: dpy.input_method()?,
-            connection: dpy,
-        })))
-    }
-
-    /// Add a window.
-    #[inline]
-    fn flutterbug_add_window(&self, external_id: WindowID, window: &Window) {
-        let mut l = self.0.window_mappings.lock();
-        l.insert(external_id, window.clone());
-    }
-
     /// Get the display.
     #[inline]
-    pub fn display(&self) -> &flutterbug::Display {
-        &self.0.connection
+    pub fn display(&self) -> Option<&flutterbug::Display> {
+        match self.0.backend {
+            InternalInstance::Flutter(ref f) => Some(f.connection()),
+            _ => None,
+        }
     }
 
+    /// Get a window by its window id.
     #[inline]
-    pub(crate) fn im(&self) -> &flutterbug::InputMethod {
-        &self.0.im
-    }
-
-    /// Get a window from the window mappings.
-    #[inline]
-    pub(crate) fn flutterbug_get_window(&self, ex_id: WindowID) -> Option<Window> {
-        let l = self.0.window_mappings.lock();
-        l.get(&ex_id).cloned()
-    }
-
-    #[inline]
-    pub(crate) fn delete_window_atom(&self) -> flutterbug::Atom {
-        self.0.atoms[DELETE_WINDOW_ATOM]
-    }
-
-    #[inline]
-    fn flutterbug_create_window(
+    pub(crate) fn flutterbug_get_window(
         &self,
-        parent: Option<&Window>,
-        text: String,
-        bounds: Rect<u32>,
-        background: Option<Texture>,
-        is_top_level: bool,
-    ) -> crate::Result<Window> {
-        let cw = crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
-        let id = cw.id();
-        let ex_id = cw.inner_flutter_window().window();
+        ex_id: flutterbug::x11::xlib::Window,
+    ) -> Option<Window> {
+        match self.0.backend {
+            InternalInstance::Flutter(ref f) => f.fl_get_window(ex_id),
+            _ => None,
+        }
+    }
 
-        let w = Window::from_raw(
-            Arc::new(RwLock::new(cw)),
-            Arc::new(Mutex::new(HashSet::new())),
-            id,
-            self.clone(),
-            None,
-        );
-        self.flutterbug_add_window(ex_id, &w);
-
-        Ok(w)
+    /// Get the delete window atom.
+    #[inline]
+    pub(crate) fn delete_window_atom(&self) -> Option<flutterbug::Atom> {
+        match self.0.backend {
+            InternalInstance::Flutter(ref f) => Some(f.delete_window_atom()),
+            _ => None,
+        }
     }
 }
 

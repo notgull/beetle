@@ -107,9 +107,12 @@ impl super::GenericInternalInstance for PorcII {
     ) -> crate::Result<Window> {
         let piw = crate::window::PorcIW::new(parent, &text, bounds)?;
         Ok(Window::from_raw(
-            RwLock::new(crate::window::InternalWindow::Porc(piw)),
+            crate::window::InternalWindow::Porc(piw),
             Mutex::new(crate::window::WindowProperties::new(
-                text, bounds, background,
+                text,
+                bounds,
+                background,
+                parent.is_none(),
             )),
             instance_ref,
         ))
