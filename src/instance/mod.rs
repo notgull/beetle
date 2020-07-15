@@ -45,9 +45,9 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, EventData, EventLoop, Pixel, Texture, Window,
+    EventLoopAction, Event, EventData, EventLoop, Pixel, Texture, Window,
 };
-use alloc::{collections::VecDeque, string::String, sync::Arc};
+use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use core::{fmt, mem, option::Option};
 use euclid::Rect;
 use hashbrown::{HashMap, HashSet};
@@ -66,9 +66,9 @@ mod loaded;
 mod loader;
 pub use loaded::*;
 
-struct InstanceInner<T: EventLoop + ?Sized> {
+struct InstanceInner {
     event_queue: Mutex<VecDeque<Event>>,
-    event_loop: Mutex<Option<T>>,
+    event_loop: RwLock<Box<dyn EventLoop + Sync>>,
     backend: internal::InternalInstance,
 }
 
@@ -77,35 +77,35 @@ struct InstanceInner<T: EventLoop + ?Sized> {
 /// The Instance object is used to abstract over the connection to the GUI server
 /// that is needed to create windows and widgets.
 #[repr(transparent)]
-pub struct Instance<T: EventLoop + ?Sized>(Arc<InstanceInner<T>>);
+pub struct Instance(Arc<InstanceInner>);
 
-impl<T: EventLoop + ?Sized> fmt::Debug for Instance<T> {
+impl fmt::Debug for Instance {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Instance")
     }
 }
 
-impl<T: EventLoop + ?Sized> PartialEq for Instance<T> {
+impl PartialEq for Instance {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl<T: EventLoop + ?Sized> Eq for Instance<T> {}
+impl Eq for Instance {}
 
-unsafe impl<T: EventLoop + ?Sized> Send for Instance<T> {}
-unsafe impl<T: EventLoop + ?Sized> Sync for Instance<T> {}
+unsafe impl Send for Instance {}
+unsafe impl Sync for Instance {}
 
-impl<T: EventLoop + ?Sized> Clone for Instance<T> {
+impl Clone for Instance {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<T: EventLoop + ?Sized + Send> Instance<T> {
+impl Instance {
     /// Create the default instance of the Beetle GUI factory.
     ///
     /// This function initializes any connections with the GUI server in
@@ -117,6 +117,7 @@ impl<T: EventLoop + ?Sized + Send> Instance<T> {
         Ok(Self(Arc::new(InstanceInner {
             event_queue: Mutex::new(VecDeque::new()),
             backend: loader::load()?,
+            event_loop: RwLock::new(Box::new(crate::ev_loop::default_event_loop)),
         })))
     }
 
@@ -166,6 +167,48 @@ impl<T: EventLoop + ?Sized + Send> Instance<T> {
         let mut evq = self.0.event_queue.lock();
         evq.extend(evs);
     }
+
+    /// Process events if the event loop is currently loaded.
+    #[inline]
+    pub(crate) fn process_events<I: IntoIterator<Item = Event>>(
+        &self,
+        evs: I,
+    ) -> crate::Result<bool> {
+        process_events_impl(self, evs).map(|v| !v.contains(&EventLoopAction::Stop))
+    }
+
+    /// Run the event loop.
+    #[inline]
+    pub fn event_loop<T: EventLoop + Sync + 'static>(&self, evl: T) -> crate::Result<()> {
+        *self.0.event_loop.write() = Box::new(evl);
+        Ok(())
+    }
+}
+
+#[inline]
+fn process_events_impl<I: IntoIterator<Item = Event>>(
+    this: &Instance,
+    evs: I,
+) -> crate::Result<Vec<EventLoopAction>> {
+    evs.into_iter()
+        .map(|ev| process_event_impl(this, ev))
+        .collect()
+}
+
+#[inline]
+fn process_event_impl(this: &Instance, mut event: Event) -> crate::Result<EventLoopAction> {
+    let evl = this.0.event_loop.read();
+
+    if let EventLoopAction::Stop = evl.pre_dispatch(&mut event, this)? {
+        return Ok(EventLoopAction::Stop);
+    }
+
+    event.dispatch()?;
+    if event.is_exit_event() {
+        return Ok(EventLoopAction::Stop);
+    }
+
+    evl.post_dispatch(event, this)
 }
 
 #[cfg(target_os = "linux")]
@@ -175,7 +218,7 @@ const DELETE_WINDOW_ATOM: usize = 0;
 use flutterbug::x11::xlib::Window as WindowID;
 
 #[cfg(target_os = "linux")]
-impl<T: EventLoop + ?Sized> Instance<T> {
+impl Instance {
     /// Get the display.
     #[inline]
     pub fn display(&self) -> Option<&flutterbug::Display> {
@@ -187,7 +230,10 @@ impl<T: EventLoop + ?Sized> Instance<T> {
 
     /// Get a window by its window id.
     #[inline]
-    pub(crate) fn flutterbug_get_window(&self, ex_id: flutterbug::x11::xlib::Window) -> Option<Window> {
+    pub(crate) fn flutterbug_get_window(
+        &self,
+        ex_id: flutterbug::x11::xlib::Window,
+    ) -> Option<Window> {
         match self.0.backend {
             InternalInstance::Flutter(ref f) => f.fl_get_window(ex_id),
             _ => None,
@@ -256,7 +302,10 @@ impl Instance {
     }
 
     #[inline]
-    pub(crate) fn porcupine_get_window(&self, hwnd: porcupine::winapi::shared::windef::HWND) -> Option<Window> {
+    pub(crate) fn porcupine_get_window(
+        &self,
+        hwnd: porcupine::winapi::shared::windef::HWND,
+    ) -> Option<Window> {
         let wm = self.0.window_mappings.lock();
         wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
     }

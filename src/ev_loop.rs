@@ -55,46 +55,18 @@ pub enum EventLoopAction {
 }
 
 /// The event loop that the program uses to continually run.
-pub trait EventLoop: Sync {
+pub trait EventLoop {
     /// Runs once for each window in the program.
     fn register_window(&mut self, window: &Window, instance: &Instance) -> crate::Result<()>;
     /// Runs once for each event, prior to being dispatched and handled by the windows.
-    fn pre_dispatch(&self, event: &Event, instance: &Instance) -> crate::Result<()>;
+    fn pre_dispatch(&self, event: &mut Event, instance: &Instance) -> crate::Result<EventLoopAction>;
     /// Runs once for each event, after the event is dispatched and handled.
-    fn post_dispatch(&self, event: Event, instance: &Instance) -> crate::Result<()>;
-    /// Handle several events.
-    #[inline]
-    fn handle_events<F, I: IntoIterator<Item = Event>>(
-        &self,
-        events: I,
-        instance: &Instance,
-        handler: F,
-    ) -> crate::Result<EventLoopAction> where F: Fn(&Self, I, Instance) -> crate::Result<EventLoopAction> {
-        handle_events_impl(self, events, instance).map(|v| {
-            if v.contains(&EventLoopAction::Stop) {
-                EventLoopAction::Stop
-            } else {
-                EventLoopAction::Continue
-            }
-        })
-    }
-}
-
-#[inline]
-fn handle_events_impl<T: EventLoop + ?Sized, I>(
-    evl: &T,
-    events: I,
-    instance: &Instance,
-) -> crate::Result<Vec<EventLoopAction>>
-where
-    I: IntoIterator<Item = Event>,
-{
-    events.into_iter().map(|ev| evl.handle_event_dispatch(ev, instance)).collect()
+    fn post_dispatch(&self, event: Event, instance: &Instance) -> crate::Result<EventLoopAction>;
 }
 
 impl<F, E> EventLoop for F
 where
-    F: Fn(&Event, &Instance) -> core::result::Result<EventLoopAction, E> + Sync,
+    F: Fn(Event, &Instance) -> core::result::Result<EventLoopAction, E>,
     E: fmt::Display,
 {
     #[inline]
@@ -103,7 +75,12 @@ where
     }
 
     #[inline]
-    fn handle_event(&self, event: &Event, instance: &Instance) -> crate::Result<EventLoopAction> {
+    fn pre_dispatch(&self, _e: &mut Event, _i: &Instance) -> crate::Result<EventLoopAction> {
+        Ok(EventLoopAction::Continue)
+    }
+
+    #[inline]
+    fn post_dispatch(&self, event: Event, instance: &Instance) -> crate::Result<EventLoopAction> {
         trait IntoBeetleError {
             fn into_berror(self) -> crate::Error;
         }
@@ -127,4 +104,13 @@ where
             Err(e) => Err(IntoBeetleError::into_berror(e)),
         }
     }
+}
+
+// default event loop
+pub(crate) fn default_event_loop(
+    event: Event,
+    instance: &Instance,
+) -> crate::Result<EventLoopAction> {
+    log::warn!("Default event loop called with event: {:?}", &event);
+    Ok(EventLoopAction::Continue)
 }

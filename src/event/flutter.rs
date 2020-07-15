@@ -52,7 +52,10 @@ use smallvec::SmallVec;
 
 impl Event {
     /// Translate a Flutterbug event to a Beetle event.
-    pub(crate) fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<SmallVec<[Self; 2]>> {
+    pub(crate) fn from_flutter(
+        instance: &Instance,
+        fev: FEvent,
+    ) -> crate::Result<SmallVec<[Self; 2]>> {
         // optimize for at least two events
         // TODO: this can probably be a TinyVec, if we want to go that route
         let mut evs = SmallVec::new();
@@ -73,12 +76,18 @@ impl Event {
             FEvent::Key(k) => {
                 // get the key information from the event
                 let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.fl_input_context().unwrap())?;
-                let mut ki = KeyInfo::new(KeyType::from_keysym(ks.ok_or_else(|| crate::Error::KeysymNotFound)?));
+                let mut ki = KeyInfo::new(KeyType::from_keysym(
+                    ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
+                ));
 
                 // set function key info
                 #[inline]
-                fn fn_key_info<F>(ki: &mut KeyInfo, k: &flutterbug::KeyEvent, key: FunctionKeys, setter: F)
-                where
+                fn fn_key_info<F>(
+                    ki: &mut KeyInfo,
+                    k: &flutterbug::KeyEvent,
+                    key: FunctionKeys,
+                    setter: F,
+                ) where
                     F: FnOnce(&mut KeyInfo),
                 {
                     if k.has_function(key) {
@@ -91,11 +100,12 @@ impl Event {
                 fn_key_info(&mut ki, &k, FunctionKeys::SHIFT, |k| k.set_shift(true));
 
                 // key press mouse location
-                let loc: Option<Point2D<u32, Pixel>> = if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
-                    Some(Point2D::new(x, y))
-                } else {
-                    None
-                };
+                let loc: Option<Point2D<u32, Pixel>> =
+                    if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
+                        Some(Point2D::new(x, y))
+                    } else {
+                        None
+                    };
 
                 evs.push(Event::new(
                     &assoc_window,

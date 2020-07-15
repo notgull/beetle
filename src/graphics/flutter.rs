@@ -45,6 +45,7 @@
 
 use super::InternalGraphics;
 use crate::{mutexes::Mutex, Color, GeometricArc, Window};
+use alloc::sync::Arc;
 use core::convert::TryInto;
 use euclid::default::{Point2D, Rect};
 use flutterbug::{prelude::*, Color as FlColor, DisplayReference};
@@ -68,7 +69,18 @@ pub struct FlutterbugGraphics {
     dpy: DisplayReference,
 
     // see below for why we need this
-    color_info: Mutex<ColorInfo>,
+    color_info: Arc<Mutex<ColorInfo>>,
+}
+
+impl Clone for FlutterbugGraphics {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            window: self.window.clone(),
+            dpy: self.dpy.clone(),
+            color_info: self.color_info.clone(),
+        }
+    }
 }
 
 impl FlutterbugGraphics {
@@ -86,10 +98,10 @@ impl FlutterbugGraphics {
         Ok(Self {
             window: window.clone(),
             dpy,
-            color_info: Mutex::new(ColorInfo {
+            color_info: Arc::new(Mutex::new(ColorInfo {
                 foreground: black,
                 background: None,
-            }),
+            })),
         })
     }
 
@@ -194,7 +206,10 @@ impl InternalGraphics for FlutterbugGraphics {
             }};
         }
 
-        let angles = (to_x11_angle!(arc.start_angle()), to_x11_angle!(arc.end_angle()));
+        let angles = (
+            to_x11_angle!(arc.start_angle()),
+            to_x11_angle!(arc.end_angle()),
+        );
         let bounds = arc.bounds();
         let origin = Point2D::<i32>::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?);
         let size = bounds.size;

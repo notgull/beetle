@@ -44,7 +44,7 @@
  */
 
 use crate::Color;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, vec::Vec, sync::Arc};
 use core::fmt;
 use euclid::default::{Point2D, Size2D};
 
@@ -74,7 +74,12 @@ impl Formatter for GrayscaleFormatter {
 
     #[inline]
     fn get_color(&self, bytes: &[u8]) -> crate::Result<Color> {
-        Ok(Color::from_rgba(bytes[0], bytes[0], bytes[0], core::u8::MAX))
+        Ok(Color::from_rgba(
+            bytes[0],
+            bytes[0],
+            bytes[0],
+            core::u8::MAX,
+        ))
     }
 }
 
@@ -89,7 +94,12 @@ impl Formatter for RgbFormatter {
     }
     #[inline]
     fn get_color(&self, bytes: &[u8]) -> crate::Result<Color> {
-        Ok(Color::from_rgba(bytes[0], bytes[1], bytes[2], core::u8::MAX))
+        Ok(Color::from_rgba(
+            bytes[0],
+            bytes[1],
+            bytes[2],
+            core::u8::MAX,
+        ))
     }
 }
 
@@ -147,11 +157,22 @@ impl ColorFetcher {
     }
 }
 
-/// A read-only buffer for pixels.
+/// A read-only buffer for pixels. This is cheaply clonable.
 pub struct PixelBuffer {
-    data: Box<[u8]>,
+    data: Arc<[u8]>,
     size: Size2D<usize>,
     fetcher: ColorFetcher,
+}
+
+impl Clone for PixelBuffer {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            size: self.size.clone(),
+            fetcher: self.fetcher.clone(),
+        }
+    }
 }
 
 impl fmt::Debug for PixelBuffer {
@@ -200,8 +221,10 @@ impl PixelBuffer {
     /// Create a new pixel buffer from the specified vector of pixels.
     #[inline]
     pub fn new(data: Vec<u8>, size: Size2D<usize>, format: Format) -> Self {
+        let data: Arc<[u8]> = data.into_boxed_slice().into();
+
         Self {
-            data: data.into_boxed_slice(),
+            data,
             size,
             fetcher: format.into(),
         }
@@ -225,7 +248,7 @@ impl PixelBuffer {
 
     // helper function to get the index of a color in our "array"
     #[inline]
-    fn xy_to_index(&self, x: usize, y: usize) -> usize {
+    const fn xy_to_index(&self, x: usize, y: usize) -> usize {
         x + (y * self.size.width)
     }
 

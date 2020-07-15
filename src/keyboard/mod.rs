@@ -257,7 +257,7 @@ impl Default for KeyType {
 }
 
 /// A key being pressed or released.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct KeyInfo {
     ty: KeyType,
     is_ctrl: bool,
@@ -396,7 +396,9 @@ impl KeyType {
     /// Convert an X11 keysym to a key type.
     #[inline]
     pub fn from_keysym(ks: flutterbug::KeySym) -> KeyType {
-        let u: usize = ks.try_into().expect("Unable to convert KeySym into array index");
+        let u: usize = ks
+            .try_into()
+            .expect("Unable to convert KeySym into array index");
         if u >= x11_keysym_table::X11_KEYSYM_TABLE.len() {
             KeyType::Unknown
         } else {

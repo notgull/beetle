@@ -62,7 +62,9 @@ impl fmt::Display for InvalidColor {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InvalidColor::OutOfRange(i) => write!(f, "Expected float {} to be between -1.0f and 1.0f", i),
+            InvalidColor::OutOfRange(i) => {
+                write!(f, "Expected float {} to be between -1.0f and 1.0f", i)
+            }
             InvalidColor::FoundNan(ref fnan) => fmt::Display::fmt(fnan, f),
         }
     }

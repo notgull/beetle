@@ -79,7 +79,10 @@ impl PorcII {
                 wm.get(&ex_id).cloned()
             }
             Err(e) => {
-                log::error!("Unable to acquire read access to Porcupine window mappings: {}", e);
+                log::error!(
+                    "Unable to acquire read access to Porcupine window mappings: {}",
+                    e
+                );
                 None
             }
         }

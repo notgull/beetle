@@ -134,7 +134,10 @@ impl super::GenericInternalInstance for FlutterII {
 
     #[inline]
     fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()> {
-        output.extend(Event::from_flutter(inst, flutterbug::Event::next(&self.connection)?)?);
+        output.extend(Event::from_flutter(
+            inst,
+            flutterbug::Event::next(&self.connection)?,
+        )?);
         Ok(())
     }
 }

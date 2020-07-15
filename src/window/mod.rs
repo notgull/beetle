@@ -56,9 +56,9 @@ use crate::{
 };
 use alloc::{string::String, sync::Arc};
 use core::{
-    mem,
     fmt,
     hash::{Hash, Hasher},
+    mem,
 };
 use euclid::{Point2D, Rect, Size2D};
 use hashbrown::HashSet;
@@ -72,7 +72,12 @@ pub(crate) struct WindowProperties {
 }
 
 impl WindowProperties {
-    pub fn new(text: String, bounds: Rect<u32, Pixel>, background: Option<Texture>, is_top_level: bool) -> Self {
+    pub fn new(
+        text: String,
+        bounds: Rect<u32, Pixel>,
+        background: Option<Texture>,
+        is_top_level: bool,
+    ) -> Self {
         Self {
             text,
             bounds,
@@ -179,33 +184,33 @@ impl Window {
     /// Set the size, and choose whether or not to emit a backend message.
     #[inline]
     pub(crate) fn set_size_emit_choice(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()> {
-            match (self.is_top_level(), self.1.ty()) {
-                (true, InstanceType::Flutterbug) => {
-                    let mut old_bounds = bounds;
-                    let new_bounds = bounds;
-                    mem::swap(&mut self.0.properties.lock().bounds.size, &mut old_bounds);
+        match (self.is_top_level(), self.1.ty()) {
+            (true, InstanceType::Flutterbug) => {
+                let mut old_bounds = bounds;
+                let new_bounds = bounds;
+                mem::swap(&mut self.0.properties.lock().bounds.size, &mut old_bounds);
 
-                    // we need to handle resizing events manually
-                    // just produce a Resizing event
-                    let mut rev = Event::new(
-                        self,
-                        EventData::Resizing {
-                            old: old_bounds,
-                            new: RwLock::new(new_bounds),
-                        },
-                    );
-                    // the hidden data bool indicates whether we should release a SizeChanged event
-                    // since we are handling it manually, it is true
-                    rev.set_hidden_data(true);
-                    self.1.queue_event(rev);
-                    Ok(())
-                }
-                (_, _) => {
-                    // otherwise, just resize the window on the backend
-                    // this emits the signal that sets the size
-                    self.backend().set_size(bounds)
-                }
+                // we need to handle resizing events manually
+                // just produce a Resizing event
+                let mut rev = Event::new(
+                    self,
+                    EventData::Resizing {
+                        old: old_bounds,
+                        new: RwLock::new(new_bounds),
+                    },
+                );
+                // the hidden data bool indicates whether we should release a SizeChanged event
+                // since we are handling it manually, it is true
+                rev.set_hidden_data(true);
+                self.1.queue_event(rev);
+                Ok(())
             }
+            (_, _) => {
+                // otherwise, just resize the window on the backend
+                // this emits the signal that sets the size
+                self.backend().set_size(bounds)
+            }
+        }
     }
 
     /// Set the size of this window.
@@ -233,22 +238,24 @@ impl Window {
 
     /// Receive an event.
     #[inline]
-    pub fn handle_event(&self, event: Event) -> crate::Result<()> {
-        let (_, data, hidden_data) = event.into_important_parts(); // TODO: make this OK
+    pub fn handle_event(&self, event: &mut Event) -> crate::Result<()> {
+        let hidden_data = event.take_hidden_data();
+        let data = event.data().clone();
         match data {
             EventData::Resizing { old, new } => {
                 if let Some(t) = hidden_data.and_then(|hd| Arc::downcast::<bool>(hd).ok()) {
                     if *t {
                         // if the new size is different than the one we sent with,
                         // set it as so
-                        let new = new.into_inner();
+                        let new = new.read().clone();
                         if new != self.size() {
                             self.0.properties.lock().bounds.size = new;
                         }
 
                         self.backend().set_size(new)?; // shouldn't be recursive
 
-                        self.1.queue_event(Event::new(self, EventData::Resized { old, new }));
+                        self.1
+                            .queue_event(Event::new(self, EventData::Resized { old, new }));
                     }
                 }
 

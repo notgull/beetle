@@ -97,7 +97,9 @@ pub trait InternalGraphics {
     /// and the background brush for the fill.
     #[inline]
     fn draw_rectangles(&self, rects: &[Rect<u32>]) -> crate::Result<()> {
-        rects.iter().try_for_each::<_, crate::Result<()>>(|r| self.draw_rectangle(*r))
+        rects
+            .iter()
+            .try_for_each::<_, crate::Result<()>>(|r| self.draw_rectangle(*r))
     }
 
     /// Draw an arc onto this graphics object, using the foreground color for the outline and
@@ -108,7 +110,8 @@ pub trait InternalGraphics {
     /// outline and the background brush for the fill.
     #[inline]
     fn draw_arcs(&self, arcs: &[GeometricArc]) -> crate::Result<()> {
-        arcs.iter().try_for_each::<_, crate::Result<()>>(|a| self.draw_arc(*a))
+        arcs.iter()
+            .try_for_each::<_, crate::Result<()>>(|a| self.draw_arc(*a))
     }
 
     /// Draw an ellipse onto this graphics object, using the foreground color for the outline

@@ -97,7 +97,7 @@ pub enum EventType {
 }
 
 /// Types of data deployed from Beetle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EventData {
     /// Nothing is happening. Often used as a transport for event data.
     NoOp,
@@ -142,7 +142,10 @@ pub enum EventData {
         new: Point2D<u32, Pixel>,
     },
     /// The window's background is being changed.
-    BackgroundChanging { old: Option<Texture>, new: Option<Texture> },
+    BackgroundChanging {
+        old: Option<Texture>,
+        new: Option<Texture>,
+    },
     /// The window's background has been changed.
     BackgroundChanged,
     /// The window has had a mouse button depressed on it.
@@ -223,14 +226,8 @@ impl Event {
     }
 
     #[inline]
-    pub(crate) fn into_important_parts(self) -> (Window, EventData, Option<Arc<dyn Any + Send + Sync + 'static>>) {
-        let Self {
-            target_window,
-            data,
-            hidden_data,
-            ..
-        } = self;
-        (target_window, data, hidden_data)
+    pub(crate) fn take_hidden_data(&mut self) -> Option<Arc<dyn Any + Send + Sync + 'static>> {
+        self.hidden_data.take()
     }
 
     /// Get the type of the event.
@@ -270,7 +267,7 @@ impl Event {
 
     /// Dispatch its event to the system handling source.
     #[inline]
-    pub fn dispatch(self) -> crate::Result<()> {
+    pub fn dispatch(&mut self) -> crate::Result<()> {
         let win = self.window().clone();
         win.handle_event(self)
     }

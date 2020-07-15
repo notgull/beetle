@@ -46,7 +46,9 @@
 use crate::{mutexes::Once, EventType, Pixel, Window};
 use core::convert::TryInto;
 use euclid::{Point2D, Rect, Size2D};
-use flutterbug::{prelude::*, Atom, Display, EventMask, InputContext, InputMethod, Window as FWindow};
+use flutterbug::{
+    prelude::*, Atom, Display, EventMask, InputContext, InputMethod, Window as FWindow,
+};
 use hashbrown::HashMap;
 
 pub struct FlutterIW {
@@ -57,7 +59,9 @@ pub struct FlutterIW {
 }
 
 #[inline]
-fn fl_compat_rect(r: Rect<u32, Pixel>) -> crate::Result<(euclid::default::Point2D<i32>, euclid::default::Size2D<u32>)> {
+fn fl_compat_rect(
+    r: Rect<u32, Pixel>,
+) -> crate::Result<(euclid::default::Point2D<i32>, euclid::default::Size2D<u32>)> {
     let pt = Point2D::new(r.origin.x.try_into()?, r.origin.y.try_into()?);
     let sz = Size2D::new(r.size.width, r.size.height);
     Ok((pt, sz))
@@ -90,7 +94,10 @@ impl FlutterIW {
         let (pt, sz) = fl_compat_rect(bounds)?;
         let inner = dpy.create_simple_window(
             match parent {
-                Some(w) => Some(w.fl_inner_window().ok_or_else(|| crate::Error::WindowMismatch)?),
+                Some(w) => Some(
+                    w.fl_inner_window()
+                        .ok_or_else(|| crate::Error::WindowMismatch)?,
+                ),
                 None => None,
             },
             pt,

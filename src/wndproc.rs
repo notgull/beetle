@@ -60,7 +60,12 @@ use porcupine::winapi::{
 /// The window procedure used by Beetle.
 ///
 /// TODO: a lot of this could be incorporated into porcupine
-pub unsafe extern "system" fn beetle_wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+pub unsafe extern "system" fn beetle_wndproc(
+    hwnd: HWND,
+    msg: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     /*
      *  I'm going to try my best to explain the system I have here, since it's a little bit
      *  convoluted, and it feels like this is the best place to explain it.
@@ -105,13 +110,19 @@ pub unsafe extern "system" fn beetle_wndproc(hwnd: HWND, msg: UINT, wparam: WPAR
         #[cfg(debug_assertions)]
         {
             if window_object_ptr.is_null() {
-                log::error!("Pointer to additional parameter is null. This is likely an internal error.");
+                log::error!(
+                    "Pointer to additional parameter is null. This is likely an internal error."
+                );
                 return FALSE as LRESULT;
             }
         }
 
         // set to GWLP_USERDATA
-        SetWindowLongPtrA(hwnd, GWLP_USERDATA, window_object_ptr as *const () as LONG_PTR);
+        SetWindowLongPtrA(
+            hwnd,
+            GWLP_USERDATA,
+            window_object_ptr as *const () as LONG_PTR,
+        );
 
         return DefWindowProcA(hwnd, msg, wparam, lparam);
     }
@@ -136,7 +147,9 @@ pub unsafe extern "system" fn beetle_wndproc(hwnd: HWND, msg: UINT, wparam: WPAR
             errhandlingapi::SetLastError(0);
         } else {
             // this is likely an internal error
-            log::error!("GetWindowLongPtrA returned a null pointer. This is likely an internal error.");
+            log::error!(
+                "GetWindowLongPtrA returned a null pointer. This is likely an internal error."
+            );
         }
 
         return DefWindowProcA(hwnd, msg, wparam, lparam);

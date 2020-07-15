@@ -46,6 +46,8 @@
 use crate::{Color, PixelBuffer};
 use core::fmt;
 
+/// Any texture that should be cheaply clonable.
+#[derive(Clone)]
 pub enum Texture {
     Color(Color),
     Image(PixelBuffer),
