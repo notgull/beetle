@@ -45,7 +45,7 @@
  */
 
 use super::Window;
-use crate::{Instance, Pixel, Texture};
+use crate::{EventType, Instance, Pixel, Texture};
 use alloc::boxed::Box;
 use euclid::{Point2D, Size2D};
 
@@ -57,6 +57,8 @@ pub trait GenericInternalWindow {
     fn set_size(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()>;
     /// Set the text associated with the window.
     fn set_text(&self, text: &str) -> crate::Result<()>;
+    /// Receive events of a certain types.
+    fn receive_events(&self, events: &[EventType]) -> crate::Result<()>;
 }
 
 #[cfg(target_os = "linux")]

@@ -76,17 +76,17 @@ impl FlutterII {
     }
 
     #[inline]
-    fn delete_window_atom(&self) -> Atom {
+    pub fn delete_window_atom(&self) -> Atom {
         self.atoms[DELETE_WINDOW_ATOM]
     }
 
     #[inline]
-    fn input_method(&self) -> &InputMethod {
+    pub fn input_method(&self) -> &InputMethod {
         &self.im
     }
 
     #[inline]
-    fn connection(&self) -> &Display {
+    pub fn connection(&self) -> &Display {
         &self.connection
     }
 
@@ -134,10 +134,7 @@ impl super::GenericInternalInstance for FlutterII {
 
     #[inline]
     fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()> {
-        output.extend(Event::from_flutter(
-            inst,
-            flutterbug::Event::next(&self.connection)?,
-        )?);
+        output.extend(Event::from_flutter(inst, flutterbug::Event::next(&self.connection)?)?);
         Ok(())
     }
 }

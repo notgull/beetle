@@ -151,8 +151,7 @@ impl InternalGraphics for PorcupineGraphics {
         let y1: c_int = p1.y.try_into()?;
         let y2: c_int = p2.y.try_into()?;
 
-        self.dc
-            .draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
+        self.dc.draw_line(Point2D::new(x1, y1), Point2D::new(x2, y2))?;
         Ok(())
     }
 

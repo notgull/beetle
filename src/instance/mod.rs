@@ -45,7 +45,7 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    Event, EventData, Pixel, Texture, Window,
+    Event, EventData, EventLoop, Pixel, Texture, Window,
 };
 use alloc::{collections::VecDeque, string::String, sync::Arc};
 use core::{fmt, mem, option::Option};
@@ -66,8 +66,9 @@ mod loaded;
 mod loader;
 pub use loaded::*;
 
-struct InstanceInner {
+struct InstanceInner<T: EventLoop + ?Sized> {
     event_queue: Mutex<VecDeque<Event>>,
+    event_loop: Mutex<Option<T>>,
     backend: internal::InternalInstance,
 }
 
@@ -76,41 +77,41 @@ struct InstanceInner {
 /// The Instance object is used to abstract over the connection to the GUI server
 /// that is needed to create windows and widgets.
 #[repr(transparent)]
-pub struct Instance(Arc<InstanceInner>);
+pub struct Instance<T: EventLoop + ?Sized>(Arc<InstanceInner<T>>);
 
-impl fmt::Debug for Instance {
+impl<T: EventLoop + ?Sized> fmt::Debug for Instance<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Instance")
     }
 }
 
-impl PartialEq for Instance {
+impl<T: EventLoop + ?Sized> PartialEq for Instance<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl Eq for Instance {}
+impl<T: EventLoop + ?Sized> Eq for Instance<T> {}
 
-unsafe impl Send for Instance {}
-unsafe impl Sync for Instance {}
+unsafe impl<T: EventLoop + ?Sized> Send for Instance<T> {}
+unsafe impl<T: EventLoop + ?Sized> Sync for Instance<T> {}
 
-impl Clone for Instance {
+impl<T: EventLoop + ?Sized> Clone for Instance<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl Instance {
+impl<T: EventLoop + ?Sized + Send> Instance<T> {
     /// Create the default instance of the Beetle GUI factory.
     ///
     /// This function initializes any connections with the GUI server in
     /// question, as well as initializes the window map and event queue.
     #[inline]
-    pub fn new() -> crate::Result<Instance> {
+    pub fn new() -> crate::Result<Self> {
         // use the loader to dynamically load the internal instance,
         // or any required libraries
         Ok(Self(Arc::new(InstanceInner {
@@ -150,7 +151,6 @@ impl Instance {
         }
 
         let w = create_window_np(self, parent, text, bounds, background)?;
-        w.set_bounds(bounds)?;
         Ok(w)
     }
 
@@ -166,23 +166,6 @@ impl Instance {
         let mut evq = self.0.event_queue.lock();
         evq.extend(evs);
     }
-
-    /// Get the next event.
-    #[inline]
-    pub fn next_event(&self) -> crate::Result<Event> {
-        let mut evq = self.0.event_queue.lock(); // option so we can drop it
-        loop {
-            match evq.pop_front() {
-                Some(ev) => {
-                    ev.window().handle_event_before_dispatch(&ev)?;
-                    return Ok(ev);
-                }
-                None => {
-                    self.0.backend.generic().hold_for_events(&mut evq, self)?;
-                }
-            }
-        }
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -192,7 +175,7 @@ const DELETE_WINDOW_ATOM: usize = 0;
 use flutterbug::x11::xlib::Window as WindowID;
 
 #[cfg(target_os = "linux")]
-impl Instance {
+impl<T: EventLoop + ?Sized> Instance<T> {
     /// Get the display.
     #[inline]
     pub fn display(&self) -> Option<&flutterbug::Display> {
@@ -204,10 +187,7 @@ impl Instance {
 
     /// Get a window by its window id.
     #[inline]
-    pub(crate) fn flutterbug_get_window(
-        &self,
-        ex_id: flutterbug::x11::xlib::Window,
-    ) -> Option<Window> {
+    pub(crate) fn flutterbug_get_window(&self, ex_id: flutterbug::x11::xlib::Window) -> Option<Window> {
         match self.0.backend {
             InternalInstance::Flutter(ref f) => f.fl_get_window(ex_id),
             _ => None,
@@ -276,10 +256,7 @@ impl Instance {
     }
 
     #[inline]
-    pub(crate) fn porcupine_get_window(
-        &self,
-        hwnd: porcupine::winapi::shared::windef::HWND,
-    ) -> Option<Window> {
+    pub(crate) fn porcupine_get_window(&self, hwnd: porcupine::winapi::shared::windef::HWND) -> Option<Window> {
         let wm = self.0.window_mappings.lock();
         wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
     }

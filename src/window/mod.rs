@@ -52,10 +52,11 @@ pub(crate) use internal::*;
 
 use crate::{
     mutexes::{Mutex, RwLock},
-Event, Instance, EventData,    EventType, InstanceType, Pixel, Texture,
+    Event, EventData, EventType, Instance, InstanceType, Pixel, Texture,
 };
 use alloc::{string::String, sync::Arc};
 use core::{
+    mem,
     fmt,
     hash::{Hash, Hasher},
 };
@@ -71,12 +72,7 @@ pub(crate) struct WindowProperties {
 }
 
 impl WindowProperties {
-    pub fn new(
-        text: String,
-        bounds: Rect<u32, Pixel>,
-        background: Option<Texture>,
-        is_top_level: bool,
-    ) -> Self {
+    pub fn new(text: String, bounds: Rect<u32, Pixel>, background: Option<Texture>, is_top_level: bool) -> Self {
         Self {
             text,
             bounds,
@@ -182,22 +178,20 @@ impl Window {
 
     /// Set the size, and choose whether or not to emit a backend message.
     #[inline]
-    pub(crate) fn set_size_emit_choice(
-        &self,
-        bounds: Size2D<u32, Pixel>,
-        emit: bool,
-    ) -> crate::Result<()> {
-        self.0.properties.lock().bounds.size = bounds;
-
-        if emit {
+    pub(crate) fn set_size_emit_choice(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()> {
             match (self.is_top_level(), self.1.ty()) {
                 (true, InstanceType::Flutterbug) => {
+                    let mut old_bounds = bounds;
+                    let new_bounds = bounds;
+                    mem::swap(&mut self.0.properties.lock().bounds.size, &mut old_bounds);
+
+                    // we need to handle resizing events manually
                     // just produce a Resizing event
                     let mut rev = Event::new(
                         self,
                         EventData::Resizing {
-                            old: self.size(),
-                            new: RwLock::new(bounds),
+                            old: old_bounds,
+                            new: RwLock::new(new_bounds),
                         },
                     );
                     // the hidden data bool indicates whether we should release a SizeChanged event
@@ -208,35 +202,53 @@ impl Window {
                 }
                 (_, _) => {
                     // otherwise, just resize the window on the backend
+                    // this emits the signal that sets the size
                     self.backend().set_size(bounds)
                 }
             }
-        } else { Ok(()) }
     }
 
     /// Set the size of this window.
     #[inline]
     pub fn set_size(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()> {
-        self.set_size_emit_choice(bounds, true)
+        self.set_size_emit_choice(bounds)
     }
 
     // helper function to get the generic backend
+    #[inline]
     fn backend(&self) -> &dyn GenericInternalWindow {
         self.0.backend.generic()
+    }
+
+    /// Tell which events to receive.
+    #[inline]
+    pub fn receive_events(&self, events: &[EventType]) -> crate::Result<()> {
+        *(self
+            .0
+            .events_received
+            .try_write()
+            .ok_or_else(|| crate::Error::UnableToWrite)?) = events.iter().copied().collect();
+        Ok(())
     }
 
     /// Receive an event.
     #[inline]
     pub fn handle_event(&self, event: Event) -> crate::Result<()> {
-        match event.data() {
-            EventData::Resizing { old: _, new } => {
-                if let Some(t) = event.hidden_data::<bool>() {
+        let (_, data, hidden_data) = event.into_important_parts(); // TODO: make this OK
+        match data {
+            EventData::Resizing { old, new } => {
+                if let Some(t) = hidden_data.and_then(|hd| Arc::downcast::<bool>(hd).ok()) {
                     if *t {
-                        // if we are handling the resize events, resize the window manually
-                        self.set_size_emit_choice(
-                            new.into_inner(),
-                            self.is_top_level() && self.1.ty() == InstanceType::Flutterbug,
-                        )?;
+                        // if the new size is different than the one we sent with,
+                        // set it as so
+                        let new = new.into_inner();
+                        if new != self.size() {
+                            self.0.properties.lock().bounds.size = new;
+                        }
+
+                        self.backend().set_size(new)?; // shouldn't be recursive
+
+                        self.1.queue_event(Event::new(self, EventData::Resized { old, new }));
                     }
                 }
 
@@ -249,6 +261,17 @@ impl Window {
     /// Some handling for events needs to happen prior to dispatch.
     #[inline]
     pub(crate) fn handle_event_before_dispatch(&self, event: &Event) -> crate::Result<()> {
+        match event.data() {
+            EventData::Resized { old: _, new } => {
+                // if we aren't handling it ourselves, set the size manually
+                if let (InstanceType::Flutterbug, true) = (self.1.ty(), self.is_top_level()) {
+                    /* do nothing */
+                } else {
+                    self.0.properties.lock().bounds.size = *new;
+                }
+            }
+            _ => (),
+        }
         Ok(())
     }
 }

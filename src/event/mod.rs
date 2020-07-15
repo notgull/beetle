@@ -74,6 +74,14 @@ pub enum EventType {
     Quit,
     /// A single window is closing.
     Close,
+    /// The window is being resized.
+    Resizing,
+    /// The window has been resized.
+    Resized,
+    /// The window is being moved.
+    Moving,
+    /// The window has been moved.
+    Moved,
     /// The window's background is being changed.
     BackgroundChanging,
     /// The window's background has been changed.
@@ -134,10 +142,7 @@ pub enum EventData {
         new: Point2D<u32, Pixel>,
     },
     /// The window's background is being changed.
-    BackgroundChanging {
-        old: Option<Texture>,
-        new: Option<Texture>,
-    },
+    BackgroundChanging { old: Option<Texture>, new: Option<Texture> },
     /// The window's background has been changed.
     BackgroundChanged,
     /// The window has had a mouse button depressed on it.
@@ -164,8 +169,10 @@ impl EventData {
             EventData::TextChanged { old: _, new: _ } => EventType::TextChanged,
             EventData::Quit => EventType::Quit,
             EventData::Close => EventType::Close,
-            EventData::BoundsChanging { old: _, new: _ } => EventType::BoundsChanging,
-            EventData::BoundsChanged { old: _, new: _ } => EventType::BoundsChanged,
+            EventData::Resizing { old: _, new: _ } => EventType::Resizing,
+            EventData::Resized { old: _, new: _ } => EventType::Resized,
+            EventData::Moving { old: _, new: _ } => EventType::Moving,
+            EventData::Moved { old: _, new: _ } => EventType::Moved,
             EventData::BackgroundChanging { old: _, new: _ } => EventType::BackgroundChanging,
             EventData::BackgroundChanged => EventType::BackgroundChanged,
             EventData::MouseButtonDown(ref _p, ref _b) => EventType::MouseButtonDown,
@@ -184,6 +191,8 @@ pub struct Event {
     hidden_data: Option<Arc<dyn Any + Send + Sync + 'static>>,
     needs_quit: bool,
 }
+
+unsafe impl Sync for Event {}
 
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -214,11 +223,14 @@ impl Event {
     }
 
     #[inline]
-    pub(crate) fn hidden_data<T: Any + Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        match self.hidden_data {
-            None => None,
-            Some(ref hd) => Arc::downcast(hd.clone()).ok(),
-        }
+    pub(crate) fn into_important_parts(self) -> (Window, EventData, Option<Arc<dyn Any + Send + Sync + 'static>>) {
+        let Self {
+            target_window,
+            data,
+            hidden_data,
+            ..
+        } = self;
+        (target_window, data, hidden_data)
     }
 
     /// Get the type of the event.
@@ -258,8 +270,9 @@ impl Event {
 
     /// Dispatch its event to the system handling source.
     #[inline]
-    pub fn dispatch(&self) -> crate::Result<()> {
-        self.window().handle_event(self)
+    pub fn dispatch(self) -> crate::Result<()> {
+        let win = self.window().clone();
+        win.handle_event(self)
     }
 
     /// Tell if the event requires the application to exit.

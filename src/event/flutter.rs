@@ -44,18 +44,15 @@
  */
 
 use super::{Event, EventData};
-use crate::{Graphics, Instance, KeyInfo, KeyType, MouseButton, Window};
+use crate::{mutexes::RwLock, Graphics, Instance, KeyInfo, KeyType, MouseButton, Pixel, Window};
 use core::convert::TryInto;
-use euclid::default::Point2D;
+use euclid::{Point2D, Size2D};
 use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};
 use smallvec::SmallVec;
 
 impl Event {
     /// Translate a Flutterbug event to a Beetle event.
-    pub(crate) fn from_flutter(
-        instance: &Instance,
-        fev: FEvent,
-    ) -> crate::Result<SmallVec<[Self; 2]>> {
+    pub(crate) fn from_flutter(instance: &Instance, fev: FEvent) -> crate::Result<SmallVec<[Self; 2]>> {
         // optimize for at least two events
         // TODO: this can probably be a TinyVec, if we want to go that route
         let mut evs = SmallVec::new();
@@ -75,19 +72,13 @@ impl Event {
             // X11 events involving a key press
             FEvent::Key(k) => {
                 // get the key information from the event
-                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.inner_window()?.ic())?;
-                let mut ki = KeyInfo::new(KeyType::from_keysym(
-                    ks.ok_or_else(|| crate::Error::KeysymNotFound)?,
-                ));
+                let (ks, _char_rep) = k.lookup_utf8(&*assoc_window.fl_input_context().unwrap())?;
+                let mut ki = KeyInfo::new(KeyType::from_keysym(ks.ok_or_else(|| crate::Error::KeysymNotFound)?));
 
                 // set function key info
                 #[inline]
-                fn fn_key_info<F>(
-                    ki: &mut KeyInfo,
-                    k: &flutterbug::KeyEvent,
-                    key: FunctionKeys,
-                    setter: F,
-                ) where
+                fn fn_key_info<F>(ki: &mut KeyInfo, k: &flutterbug::KeyEvent, key: FunctionKeys, setter: F)
+                where
                     F: FnOnce(&mut KeyInfo),
                 {
                     if k.has_function(key) {
@@ -100,12 +91,11 @@ impl Event {
                 fn_key_info(&mut ki, &k, FunctionKeys::SHIFT, |k| k.set_shift(true));
 
                 // key press mouse location
-                let loc: Option<Point2D<u32>> =
-                    if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
-                        Some(Point2D::new(x, y))
-                    } else {
-                        None
-                    };
+                let loc: Option<Point2D<u32, Pixel>> = if let (Ok(x), Ok(y)) = (k.x().try_into(), k.y().try_into()) {
+                    Some(Point2D::new(x, y))
+                } else {
+                    None
+                };
 
                 evs.push(Event::new(
                     &assoc_window,
@@ -116,35 +106,41 @@ impl Event {
                     },
                 ));
             }
+            // Resize request
+            FEvent::ResizeRequest(r) => {
+                // note: we only get these if we're on the top level
+                // get the total size
+                let current_size = Size2D::new(r.width(), r.height());
+                let old_size = assoc_window.size();
+
+                let mut rev = Event::new(
+                    &assoc_window,
+                    EventData::Resizing {
+                        old: old_size,
+                        new: RwLock::new(current_size),
+                    },
+                );
+                rev.set_hidden_data(true);
+                evs.push(rev);
+            }
             // Re-rendering of the window
             FEvent::Expose(e) => {
-                // if the size isn't the same, set up a changed bounds event
-                let old_bounds = assoc_window.bounds()?;
-                let new_bounds =
-                    euclid::rect(e.x().try_into()?, e.y().try_into()?, e.width(), e.height());
-
-                if old_bounds != new_bounds {
-                    // Note: The (false, true) at the end tells the event handler that
-                    // this event was emitted by the event loop and not from the
-                    // set_bounds function. It signals that the bounds change should
-                    // not be forwarded to the X11 backend. The "true" is to tell the
-                    // handler to enqueue the BoundsChanged event.
-                    let mut ev = Event::new(
+                // note: we rely on this event to tell if the window has been resized,
+                // if we aren't top-level
+                if !assoc_window.is_top_level() {
+                    evs.push(Event::new(
                         &assoc_window,
-                        EventData::BoundsChanging {
-                            old: old_bounds,
-                            new: new_bounds,
+                        EventData::Resized {
+                            old: assoc_window.size(),
+                            new: Size2D::new(e.width(), e.height()),
                         },
-                    );
-                    ev.set_hidden_data((false, true));
-                    evs.push(ev);
+                    ));
                 }
 
                 evs.push(Event::new(
                     &assoc_window,
                     EventData::Paint(Graphics::from_window(&assoc_window)?),
                 ));
-                // TODO: create g-object
             }
             // Press/release of a mouse button
             #[allow(non_upper_case_globals)]
@@ -159,7 +155,7 @@ impl Event {
                         Button5 => MouseButton::Button5,
                         _ => return Err(crate::Error::StaticMsg("Unexpected X11 mouse input")),
                     };
-                    let loc = Point2D::<u32>::new(x, y);
+                    let loc = Point2D::<u32, Pixel>::new(x, y);
 
                     evs.push(Event::new(
                         &assoc_window,
@@ -175,7 +171,7 @@ impl Event {
             // Special client messages
             FEvent::ClientMessage(c) => {
                 // Check if the client message corresponds to the pre-set delete window atom
-                if AsRef::<[Atom]>::as_ref(&c.data())[0] == instance.delete_window_atom() {
+                if AsRef::<[Atom]>::as_ref(&c.data())[0] == instance.delete_window_atom().unwrap() {
                     evs.push(Event::new(&assoc_window, EventData::Close));
 
                     // also send a quit event if this is the top-level window

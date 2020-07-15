@@ -36,6 +36,7 @@ flutterbug = { version = "0.1.1" }
 
 [features]
 default = ["std"]
+expose_internal = []
 std = ["parking_lot", "image", "ordered-float/std"]
 
 [badges]

@@ -194,10 +194,7 @@ impl InternalGraphics for FlutterbugGraphics {
             }};
         }
 
-        let angles = (
-            to_x11_angle!(arc.start_angle()),
-            to_x11_angle!(arc.end_angle()),
-        );
+        let angles = (to_x11_angle!(arc.start_angle()), to_x11_angle!(arc.end_angle()));
         let bounds = arc.bounds();
         let origin = Point2D::<i32>::new(bounds.origin.x.try_into()?, bounds.origin.y.try_into()?);
         let size = bounds.size;

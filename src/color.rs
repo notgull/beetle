@@ -171,14 +171,7 @@ impl Color {
             }};
         }
 
-        unsafe {
-            Self::new_no_nan_check(
-                cnvrt_u8_f32!(r),
-                cnvrt_u8_f32!(g),
-                cnvrt_u8_f32!(b),
-                cnvrt_u8_f32!(a),
-            )
-        }
+        unsafe { Self::new_no_nan_check(cnvrt_u8_f32!(r), cnvrt_u8_f32!(g), cnvrt_u8_f32!(b), cnvrt_u8_f32!(a)) }
     }
 }
 

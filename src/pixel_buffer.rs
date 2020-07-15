@@ -74,12 +74,7 @@ impl Formatter for GrayscaleFormatter {
 
     #[inline]
     fn get_color(&self, bytes: &[u8]) -> crate::Result<Color> {
-        Ok(Color::from_rgba(
-            bytes[0],
-            bytes[0],
-            bytes[0],
-            core::u8::MAX,
-        ))
+        Ok(Color::from_rgba(bytes[0], bytes[0], bytes[0], core::u8::MAX))
     }
 }
 
@@ -94,12 +89,7 @@ impl Formatter for RgbFormatter {
     }
     #[inline]
     fn get_color(&self, bytes: &[u8]) -> crate::Result<Color> {
-        Ok(Color::from_rgba(
-            bytes[0],
-            bytes[1],
-            bytes[2],
-            core::u8::MAX,
-        ))
+        Ok(Color::from_rgba(bytes[0], bytes[1], bytes[2], core::u8::MAX))
     }
 }
 

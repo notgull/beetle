@@ -50,6 +50,7 @@
 //! rather than the framework.
 
 #![allow(clippy::missing_safety_doc)]
+#![feature(specialization)]
 #![feature(trait_alias)]
 #![no_std]
 #![warn(rust_2018_idioms)]
@@ -66,6 +67,7 @@ extern crate std as alloc;
 pub mod arc;
 pub mod color;
 pub mod error;
+pub mod ev_loop;
 pub mod event;
 pub mod geometry;
 pub mod graphics;
@@ -82,6 +84,7 @@ pub(crate) mod wndproc;
 pub use arc::*;
 pub use color::*;
 pub use error::*;
+pub use ev_loop::*;
 pub use event::*;
 pub use geometry::*;
 pub use graphics::*;

@@ -43,22 +43,21 @@
  * ----------------------------------------------------------------------------------
  */
 
+use crate::{mutexes::Once, EventType, Pixel, Window};
 use core::convert::TryInto;
-use crate::{Pixel, Window};
 use euclid::{Point2D, Rect, Size2D};
-use flutterbug::{
-    prelude::*, Atom, Display, EventMask, InputContext, InputMethod, Window as FWindow,
-};
+use flutterbug::{prelude::*, Atom, Display, EventMask, InputContext, InputMethod, Window as FWindow};
+use hashbrown::HashMap;
 
 pub struct FlutterIW {
     inner: FWindow,
     ic: InputContext,
+    // make a note of if we're top-level or not
+    top_level: bool,
 }
 
 #[inline]
-fn fl_compat_rect(
-    r: Rect<u32, Pixel>,
-) -> crate::Result<(euclid::default::Point2D<i32>, euclid::default::Size2D<u32>)> {
+fn fl_compat_rect(r: Rect<u32, Pixel>) -> crate::Result<(euclid::default::Point2D<i32>, euclid::default::Size2D<u32>)> {
     let pt = Point2D::new(r.origin.x.try_into()?, r.origin.y.try_into()?);
     let sz = Size2D::new(r.size.width, r.size.height);
     Ok((pt, sz))
@@ -70,7 +69,7 @@ macro_rules! default_event_mask {
         let mut dem = EventMask::EXPOSURE_MASK;
 
         if $itl {
-            dem |= EventMask::RESIZE_REQUEST_MASK;
+            dem |= EventMask::RESIZE_REDIRECT_MASK;
         }
 
         dem
@@ -91,10 +90,7 @@ impl FlutterIW {
         let (pt, sz) = fl_compat_rect(bounds)?;
         let inner = dpy.create_simple_window(
             match parent {
-                Some(w) => Some(
-                    w.fl_inner_window()
-                        .ok_or_else(|| crate::Error::WindowMismatch)?,
-                ),
+                Some(w) => Some(w.fl_inner_window().ok_or_else(|| crate::Error::WindowMismatch)?),
                 None => None,
             },
             pt,
@@ -106,12 +102,13 @@ impl FlutterIW {
 
         inner.set_protocols(&mut [dwp])?;
         inner.store_name(text)?;
-        inner.select_input(EventMask::EXPOSURE_MASK)?;
+        inner.select_input(default_event_mask!(parent.is_none()))?;
         inner.set_position(pt)?;
 
         Ok(Self {
             ic: inner.input_context(im)?,
             inner,
+            top_level: parent.is_none(),
         })
     }
 
@@ -126,6 +123,11 @@ impl FlutterIW {
     }
 }
 
+fn x11_event_mask_map() -> HashMap<EventType, EventMask> {
+    let mut emm = HashMap::new();
+    emm
+}
+
 impl super::GenericInternalWindow for FlutterIW {
     #[inline]
     fn show(&self) -> crate::Result<()> {
@@ -135,8 +137,7 @@ impl super::GenericInternalWindow for FlutterIW {
 
     #[inline]
     fn set_size(&self, size: Size2D<u32, Pixel>) -> crate::Result<()> {
-        self.inner
-            .set_bounds(Size2D::new(size.width, size.height))?;
+        self.inner.resize(Size2D::new(size.width, size.height))?;
         Ok(())
     }
 
@@ -144,5 +145,21 @@ impl super::GenericInternalWindow for FlutterIW {
     fn set_text(&self, text: &str) -> crate::Result<()> {
         self.inner.store_name(text)?;
         Ok(())
+    }
+
+    #[inline]
+    fn receive_events(&self, events: &[EventType]) -> crate::Result<()> {
+        lazy_static::lazy_static! {
+            static ref X11_EVENT_MASK_MAP: HashMap<EventType, EventMask> = x11_event_mask_map();
+        }
+
+        Ok(self.inner.select_input(
+            events
+                .iter()
+                .map(|et| X11_EVENT_MASK_MAP.get(et).copied())
+                .filter(Option::is_some)
+                .map(|o| o.unwrap())
+                .fold(default_event_mask!(self.top_level), |res, em| res | em),
+        )?)
     }
 }
