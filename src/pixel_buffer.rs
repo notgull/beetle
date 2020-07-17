@@ -44,7 +44,7 @@
  */
 
 use crate::Color;
-use alloc::{boxed::Box, vec::Vec, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::fmt;
 use euclid::default::{Point2D, Size2D};
 

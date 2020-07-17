@@ -48,6 +48,7 @@ use crate::{
     Event, Instance, Pixel, Texture, Window,
 };
 use alloc::{collections::VecDeque, string::String};
+use core::sync::atomic::{AtomicBool, Ordering};
 use euclid::Rect;
 use hashbrown::HashMap;
 use porcupine::winapi::HWND;
@@ -55,7 +56,7 @@ use smallvec::{smallvec, SmallVec};
 
 pub struct PorcII {
     window_mappings: RwLock<HashMap<usize, Window>>,
-    next_events: Mutex<SmallVec<[crate::Result<SmallVec<[Event; 2]>>; 1]>>,
+    quit_flag: AtomicBool,
 }
 
 impl PorcII {
@@ -65,33 +66,32 @@ impl PorcII {
         // however, we do well to initialize CommCtrl here
         porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
 
-        Ok(Self(Arc::new(InstanceInternal {
+        Ok(PorcII {
             window_mappings: RwLock::new(HashMap::new()),
-            next_events: Mutex::new(SmallVec::new()),
-        })))
+            quit_flag: AtomicBool::new(false),
+        })
     }
 
     #[inline]
-    pub fn pc_get_window(&self, ptr: HWND) -> Option<Window> {
+    pub fn prc_get_window(&self, ptr: HWND) -> Option<Window> {
         match self.window_mappings.try_read() {
-            Ok(wm) => {
+            Some(wm) => {
                 let ex_id = ptr as *const () as usize;
                 wm.get(&ex_id).cloned()
             }
-            Err(e) => {
-                log::error!(
-                    "Unable to acquire read access to Porcupine window mappings: {}",
-                    e
-                );
+            None => {
+                log::error!("Unable to acquire read access to Porcupine window mappings");
                 None
             }
         }
     }
 
     #[inline]
-    pub fn pc_set_next_events(&self, ne: crate::Result<SmallVec<[Event; 2]>>) {
-        let mut l = self.next_events.lock();
-        l.push(ne);
+    pub fn set_needs_quit(&self) {
+        if let Ok(_b) =
+            self.quit_flag
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        {}
     }
 }
 
@@ -106,8 +106,10 @@ impl super::GenericInternalInstance for PorcII {
         instance_ref: Instance,
     ) -> crate::Result<Window> {
         let piw = crate::window::PorcIW::new(parent, &text, bounds)?;
-        Ok(Window::from_raw(
-            crate::window::InternalWindow::Porc(piw),
+        let ex_id = piw.prc_inner_window().hwnd();
+
+        let w = Window::from_raw(
+            crate::window::InternalWindow::Porcupine(piw),
             Mutex::new(crate::window::WindowProperties::new(
                 text,
                 bounds,
@@ -115,20 +117,42 @@ impl super::GenericInternalInstance for PorcII {
                 parent.is_none(),
             )),
             instance_ref,
-        ))
+        );
+
+        self.window_mappings
+            .write()
+            .insert(ex_id.as_ptr() as *const () as usize, w.clone());
+
+        Ok(w)
     }
 
     #[inline]
-    fn hold_for_events(&self, output: &mut VecDeque<Event>) -> crate::Result<()> {
-        let mut ne = self.next_events.lock();
-        output.extend(
-            ne.drain(..)
-                .flat_map(|el| match el {
-                    Ok(e) => e.into_iter().map(Result::Ok),
-                    Err(err) => smallvec![Err(err)].into_iter(),
-                })
-                .collect::<crate::Result<SmallVec<[Event; 2]>>>()?,
-        );
+    fn hold_for_events(&self, output: &mut SmallVec<[Event; 8]>) -> crate::Result<()> {
+        // the window procedure should handle event processing for us
+        // otherwise we can set the quit flag
+        if let Some(ref msg) = porcupine::get_message()? {
+            porcupine::translate_message(msg);
+            porcupine::dispatch_message(msg);
+        } else {
+            // this is a quit message
+            // we need a window to put the quit message on. any old window should do.
+            let win = self
+                .window_mappings
+                .read()
+                .iter()
+                .map(|(_k, v)| v.clone())
+                .next()
+                .expect("Window mappings did not contain a window to assign a quit event to.");
+            let mut qev = Event::new(&win, crate::EventData::Quit);
+            qev.set_is_exit_event(true);
+            output.push(qev);
+        }
+
         Ok(())
+    }
+
+    #[inline]
+    fn needs_quit(&self) -> bool {
+        self.quit_flag.load(Ordering::Acquire)
     }
 }

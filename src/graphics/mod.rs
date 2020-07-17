@@ -44,7 +44,7 @@
  */
 
 use crate::{Color, GeometricArc, Window};
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::fmt;
 use euclid::{
     default::{Point2D, Rect},
@@ -131,12 +131,13 @@ pub trait InternalGraphics {
 }
 
 // storage object for internal graphics object
+#[derive(Clone)]
 enum GraphicsStorage {
     #[cfg(target_os = "linux")]
     Flutter(FlutterbugGraphics),
     #[cfg(windows)]
     Porc(PorcupineGraphics),
-    Other(Box<dyn InternalGraphics>),
+    Other(Arc<dyn InternalGraphics>),
 }
 
 impl GraphicsStorage {
@@ -161,6 +162,7 @@ impl GraphicsStorage {
 }
 
 /// The graphics object used in painting operations.
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Graphics(GraphicsStorage);
 
@@ -175,7 +177,7 @@ impl Graphics {
     /// Create a new graphics object from an object implementing InternalGraphics.
     #[inline]
     pub fn new(internal: Box<dyn InternalGraphics>) -> Graphics {
-        Self(GraphicsStorage::Other(internal))
+        Self(GraphicsStorage::Other(internal.into()))
     }
 
     /// Create a graphics object based on a window.

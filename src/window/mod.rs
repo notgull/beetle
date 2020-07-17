@@ -196,7 +196,7 @@ impl Window {
                     self,
                     EventData::Resizing {
                         old: old_bounds,
-                        new: RwLock::new(new_bounds),
+                        new: Arc::new(RwLock::new(new_bounds)),
                     },
                 );
                 // the hidden data bool indicates whether we should release a SizeChanged event
@@ -295,6 +295,16 @@ impl Window {
     pub(crate) fn fl_input_context(&self) -> Option<&flutterbug::InputContext> {
         match self.0.backend {
             InternalWindow::Flutter(ref f) => Some(f.ic()),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Window {
+    pub(crate) fn prc_inner_window(&self) -> Option<&porcupine::Window> {
+        match self.0.backend {
+            InternalWindow::Porcupine(ref p) => Some(p.prc_window()),
             _ => None,
         }
     }

@@ -65,7 +65,16 @@ pub trait GenericInternalInstance {
         instance_ref: Instance,
     ) -> crate::Result<Window>;
 
-    fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()>;
+    fn hold_for_events(
+        &self,
+        output: &mut SmallVec<[Event; 8]>,
+        inst: &Instance,
+    ) -> crate::Result<()>;
+
+    #[inline]
+    fn needs_quit(&self) -> bool {
+        false
+    }
 }
 
 /// Storage for the internal instance;

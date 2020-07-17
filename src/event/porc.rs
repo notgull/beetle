@@ -127,13 +127,9 @@ impl Event {
                 set_key_state(&mut ki, VK_MENU, |ki| ki.set_alt(true));
                 set_key_state(&mut ki, VK_SHIFT, |ki| ki.set_shift(true));
 
-                let loc: Option<Point2D<u32>> = match porcupine::cursor_pos().and_then(|f| {
-                    assoc_window
-                        .inner_window()
-                        .expect("Unable to acquire read access to window lock")
-                        .inner_porc_window()
-                        .screen_to_client(f)
-                }) {
+                let loc: Option<Point2D<u32>> = match porcupine::cursor_pos()
+                    .and_then(|f| assoc_window.prc_inner_window().screen_to_client(f))
+                {
                     Err(e) => {
                         // if an error occurred, just drop it and set loc to None
                         log::error!("Error finding position on screen: {}", e);
@@ -175,6 +171,9 @@ impl Event {
                 );
                 ev.set_hidden_data((false, false));
                 evs.push(ev);
+            }
+            WM_SIZING => {
+                let new_bounds = get_newbounds(lparam)?;
             }
             WM_WINDOWPOSCHANGED => {
                 log::debug!("Found WM_WINDOWPOSCHANGED");

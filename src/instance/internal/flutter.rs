@@ -120,7 +120,9 @@ impl super::GenericInternalInstance for FlutterII {
             &text,
             bounds,
         )?;
-        Ok(Window::from_raw(
+        let ex_id = fiw.fl_window().window();
+
+        let w = Window::from_raw(
             crate::window::InternalWindow::Flutter(fiw),
             Mutex::new(crate::window::WindowProperties::new(
                 text,
@@ -129,11 +131,19 @@ impl super::GenericInternalInstance for FlutterII {
                 parent.is_none(),
             )),
             instance_ref,
-        ))
+        );
+
+        self.window_mappings.write().insert(ex_id, w.clone());
+
+        Ok(w)
     }
 
     #[inline]
-    fn hold_for_events(&self, output: &mut VecDeque<Event>, inst: &Instance) -> crate::Result<()> {
+    fn hold_for_events(
+        &self,
+        output: &mut SmallVec<[Event; 8]>,
+        inst: &Instance,
+    ) -> crate::Result<()> {
         output.extend(Event::from_flutter(
             inst,
             flutterbug::Event::next(&self.connection)?,

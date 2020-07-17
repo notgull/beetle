@@ -42,3 +42,111 @@
  * limitations under the License.
  * ----------------------------------------------------------------------------------
  */
+
+use crate::{EventType, Instance, Pixel, Window};
+use alloc::string::ToString;
+use core::convert::TryInto;
+use cty::c_int;
+use euclid::{Rect, Size2D};
+use porcupine::{
+    prelude::*, CmdShow, ExtendedWindowStyle, OwnedWindowClass, Window as PWindow, WindowStyle,
+};
+
+#[repr(transparent)]
+pub struct PorcIW {
+    inner: PWindow,
+}
+
+// the window class, statically created and held
+lazy_static::lazy_static! {
+    static ref BEETLE_WINDOW_CLASS: OwnedWindowClass =
+        create_window_class()
+            .expect("Unable to create window class");
+}
+
+// generator for creating the window class
+#[inline]
+fn create_window_class() -> crate::Result<OwnedWindowClass> {
+    const WC_NAME: &'static str = "BeetleWindowClassDefault";
+    let mut wc = OwnedWindowClass::new(WC_NAME.to_string());
+    wc.set_window_proc(Some(crate::wndproc::beetle_wndproc));
+    wc.register()?;
+    Ok(wc)
+}
+
+#[inline]
+fn porc_compat_rect(r: Rect<u32, Pixel>) -> crate::Result<euclid::default::Rect<c_int>> {
+    Ok(euclid::rect(
+        r.origin.x.try_into()?,
+        r.origin.y.try_into()?,
+        r.size.width.try_into()?,
+        r.size.height.try_into()?,
+    ))
+}
+
+#[inline]
+fn porc_compat_size(size: Size2D<u32, Pixel>) -> crate::Result<euclid::defaukt::Size2D<c_int>> {
+    Ok(euclid::size2(
+        size.width.try_into()?,
+        size.height.try_into()?,
+    ))
+}
+
+impl PorcIW {
+    #[inline]
+    pub fn new(
+        instance: &Instance,
+        parent: Option<&Window>,
+        text: &str,
+        bounds: Rect<u32, Pixel>,
+    ) -> crate::Result<Self> {
+        Ok(Self {
+            inner: {
+                PWindow::with_creation_param(
+                    &*BEETLE_WINDOW_CLASS,
+                    text,
+                    WindowStyle::MAXIMIZE_BOX | WindowStyle::MINIMIZE_BOX,
+                    ExtendedWindowStyle::CLIENT_EDGE,
+                    porc_compat_rect(bounds)?,
+                    match parent {
+                        None => None,
+                        Some(w) => Some(w.prc_inner_window().unwrap()),
+                    },
+                    Some(Box::new(instance.clone())),
+                )?
+            },
+        })
+    }
+
+    #[inline]
+    pub fn prc_window(&self) -> &PWindow {
+        &self.inner
+    }
+}
+
+impl super::GenericInternalWindow for PorcIW {
+    #[inline]
+    fn show(&self) -> crate::Result<()> {
+        self.inner.show(CmdShow::Show);
+        self.inner.update()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_size(&self, bounds: Size2D<u32, Pixel>) -> crate::Result<()> {
+        self.inner.resize(porc_compat_size(bounds)?)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_text(&self, text: &str) -> crate::Result<()> {
+        self.inner.set_text(text)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn receive_events(&self, _events: &[EventType]) -> crate::Result<()> {
+        // do nothing
+        Ok(())
+    }
+}

@@ -45,6 +45,7 @@
 
 use super::{Event, EventData};
 use crate::{mutexes::RwLock, Graphics, Instance, KeyInfo, KeyType, MouseButton, Pixel, Window};
+use alloc::sync::Arc;
 use core::convert::TryInto;
 use euclid::{Point2D, Size2D};
 use flutterbug::{prelude::*, Atom, Event as FEvent, EventType as FEventType, FunctionKeys};
@@ -127,7 +128,7 @@ impl Event {
                     &assoc_window,
                     EventData::Resizing {
                         old: old_size,
-                        new: RwLock::new(current_size),
+                        new: Arc::new(RwLock::new(current_size)),
                     },
                 );
                 rev.set_hidden_data(true);

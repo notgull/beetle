@@ -46,7 +46,7 @@
 #![cfg(windows)]
 
 use crate::{Event, Instance, Window};
-use core::{any::Any, mem};
+use core::{any::Any, mem, sync::atomic::AtomicPtr};
 use maybe_uninit::MaybeUninit;
 use porcupine::winapi::{
     shared::{
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn beetle_wndproc(
     let instance = mem::transmute::<LONG_PTR, *const Instance>(instance);
     let instance: &Instance = &*instance;
 
-    let window = match instance.porcupine_get_window(hwnd) {
+    let window = match instance.prc_get_window(hwnd) {
         Some(w) => w,
         None => {
             log::error!(
@@ -179,16 +179,7 @@ pub unsafe extern "system" fn beetle_wndproc(
             DestroyWindow(hwnd);
         }
         WM_DESTROY => {
-            if match window.is_top_level() {
-                Ok(tl) => tl,
-                Err(e) => {
-                    log::error!(
-                        "Unable to determine whether the window is top level: {}. Assuming that it isn't.",
-                        e
-                    );
-                    false
-                }
-            } {
+            if window.is_top_level() {
                 PostQuitMessage(0);
                 return 0;
             }
@@ -197,9 +188,24 @@ pub unsafe extern "system" fn beetle_wndproc(
     }
 
     // get the events and set the instance's buffer
-    let events = Event::from_porc(instance, window, msg, wparam, lparam);
-    instance.porcupine_set_next_events(events); // forward the error to the actual Rust part
+    let events = match Event::from_porc(instance, window, msg, wparam, lparam) {
+        Ok(events) => events,
+        Err(e) => {
+            instance.delay_error(e);
+            return DefWindowProcA(hwnd, msg, wparam, lparam);
+        }
+    };
 
-    // just forward the event to DefWindowProcA now
-    DefWindowProcA(hwnd, msg, wparam, lparam)
+    // wrap the hwnd in AtomicPtr so we can send it
+    let hwnd_atomic = AtomicPtr::new(hwnd);
+
+    instance.set_additional_dispatch(move || {
+        DefWindowProcA(hwnd_atomic.into_inner(), msg, wparam, lparam);
+        Ok(())
+    });
+    if let Err(e) = instance.process_events(events) {
+        instance.delay_error(e);
+    }
+
+    0
 }

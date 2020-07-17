@@ -59,7 +59,11 @@ pub trait EventLoop {
     /// Runs once for each window in the program.
     fn register_window(&mut self, window: &Window, instance: &Instance) -> crate::Result<()>;
     /// Runs once for each event, prior to being dispatched and handled by the windows.
-    fn pre_dispatch(&self, event: &mut Event, instance: &Instance) -> crate::Result<EventLoopAction>;
+    fn pre_dispatch(
+        &self,
+        event: &mut Event,
+        instance: &Instance,
+    ) -> crate::Result<EventLoopAction>;
     /// Runs once for each event, after the event is dispatched and handled.
     fn post_dispatch(&self, event: Event, instance: &Instance) -> crate::Result<EventLoopAction>;
 }
@@ -109,7 +113,7 @@ where
 // default event loop
 pub(crate) fn default_event_loop(
     event: Event,
-    instance: &Instance,
+    _instance: &Instance,
 ) -> crate::Result<EventLoopAction> {
     log::warn!("Default event loop called with event: {:?}", &event);
     Ok(EventLoopAction::Continue)

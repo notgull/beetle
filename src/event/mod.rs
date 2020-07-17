@@ -78,8 +78,6 @@ pub enum EventType {
     Resizing,
     /// The window has been resized.
     Resized,
-    /// The window is being moved.
-    Moving,
     /// The window has been moved.
     Moved,
     /// The window's background is being changed.
@@ -122,19 +120,12 @@ pub enum EventData {
     /// By mutating `new`, one can change which size the event resizes to.
     Resizing {
         old: Size2D<u32, Pixel>,
-        new: RwLock<Size2D<u32, Pixel>>,
+        new: Arc<RwLock<Size2D<u32, Pixel>>>,
     },
     /// The window has been resized.
     Resized {
         old: Size2D<u32, Pixel>,
         new: Size2D<u32, Pixel>,
-    },
-    /// The window is being moved.
-    ///
-    /// By mutating `new`, one can change which point the event moves to.
-    Moving {
-        old: Point2D<u32, Pixel>,
-        new: RwLock<Point2D<u32, Pixel>>,
     },
     /// The window has been moved.
     Moved {

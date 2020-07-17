@@ -45,7 +45,7 @@
 
 use crate::{
     mutexes::{Mutex, RwLock},
-    EventLoopAction, Event, EventData, EventLoop, Pixel, Texture, Window,
+    Event, EventData, EventLoop, EventLoopAction, Pixel, Texture, Window,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use core::{fmt, mem, option::Option};
@@ -67,8 +67,10 @@ mod loader;
 pub use loaded::*;
 
 struct InstanceInner {
-    event_queue: Mutex<VecDeque<Event>>,
+    event_queue: Mutex<SmallVec<[Event; 8]>>,
     event_loop: RwLock<Box<dyn EventLoop + Sync>>,
+    delayed_error: Mutex<Option<crate::Error>>,
+    dispatch_additional: Mutex<Option<Box<dyn FnOnce() -> crate::Result<()> + Sync>>>,
     backend: internal::InternalInstance,
 }
 
@@ -115,10 +117,46 @@ impl Instance {
         // use the loader to dynamically load the internal instance,
         // or any required libraries
         Ok(Self(Arc::new(InstanceInner {
-            event_queue: Mutex::new(VecDeque::new()),
+            event_queue: Mutex::new(SmallVec::new()),
             backend: loader::load()?,
             event_loop: RwLock::new(Box::new(crate::ev_loop::default_event_loop)),
+            delayed_error: Mutex::new(None),
+            dispatch_additional: Mutex::new(None),
         })))
+    }
+
+    /// Delay an error for the next iteration of the event loop.
+    #[inline]
+    pub(crate) fn delay_error(&self, err: crate::Error) {
+        let mut derr = self.0.delayed_error.lock();
+        if derr.is_some() {
+            log::error!("Attempted to delay error: {:?}", err);
+            log::error!(
+                "An error is already delayed and it will be the only one that is processed."
+            );
+        } else {
+            *derr = Some(err);
+        }
+    }
+
+    /// Set the additional dispatch function.
+    #[inline]
+    pub(crate) fn set_additional_dispatch<F: FnOnce() -> crate::Result<()> + Sync + 'static>(
+        &self,
+        f: F,
+    ) {
+        *self.0.dispatch_additional.lock() = Some(Box::new(f));
+    }
+
+    /// Unset the additional dispatch function.
+    #[inline]
+    pub(crate) fn call_additional_dispatch(&self) -> crate::Result<()> {
+        let mut daf = self.0.dispatch_additional.lock().take();
+        if let Some(daf) = daf {
+            daf()
+        } else {
+            Ok(())
+        }
     }
 
     /// Get the type of library loaded by this Instance.
@@ -158,7 +196,7 @@ impl Instance {
     /// Queue an event into the event queue.
     #[inline]
     pub fn queue_event(&self, ev: Event) {
-        self.0.event_queue.lock().push_back(ev);
+        self.0.event_queue.lock().push(ev);
     }
 
     /// Queue several events into the event queue.
@@ -181,6 +219,36 @@ impl Instance {
     #[inline]
     pub fn event_loop<T: EventLoop + Sync + 'static>(&self, evl: T) -> crate::Result<()> {
         *self.0.event_loop.write() = Box::new(evl);
+
+        'evloop: loop {
+            // check for a delayed error
+            if let Some(err) = self.0.delayed_error.lock().take() {
+                return Err(err);
+            }
+
+            // drain events from the event queue
+            let mut evq = self.0.event_queue.lock();
+            let mut events: SmallVec<[Event; 8]> = evq.drain(..).rev().collect();
+            mem::drop(evq); // event loop might need to push events
+
+            // if the length of the drained events is zero, get more by holding
+            // note: in some cases, the handling actually consitutes the processing
+            if events.is_empty() {
+                self.0
+                    .backend
+                    .generic()
+                    .hold_for_events(&mut events, self)?;
+            }
+
+            // if the length is still zero, continue
+            if events.is_empty() {
+                continue 'evloop;
+            }
+
+            // process the events
+            self.process_events(events)?;
+        }
+
         Ok(())
     }
 }
@@ -197,6 +265,9 @@ fn process_events_impl<I: IntoIterator<Item = Event>>(
 
 #[inline]
 fn process_event_impl(this: &Instance, mut event: Event) -> crate::Result<EventLoopAction> {
+    let win = event.window().clone();
+    win.handle_event_before_dispatch(&mut event)?;
+
     let evl = this.0.event_loop.read();
 
     if let EventLoopAction::Stop = evl.pre_dispatch(&mut event, this)? {
@@ -204,6 +275,7 @@ fn process_event_impl(this: &Instance, mut event: Event) -> crate::Result<EventL
     }
 
     event.dispatch()?;
+    this.call_additional_dispatch()?;
     if event.is_exit_event() {
         return Ok(EventLoopAction::Stop);
     }
@@ -255,92 +327,12 @@ use porcupine::HWND;
 
 #[cfg(windows)]
 impl Instance {
+    /// Get a window.
     #[inline]
-    fn porcupine_new() -> crate::Result<Instance> {
-        // win32 doesn't really have a connection object like X11 does
-        // however, we do well to initialize CommCtrl here
-        porcupine::init_commctrl(porcupine::ControlClasses::BAR_CLASSES)?;
-
-        Ok(Self(Arc::new(InstanceInternal {
-            event_queue: Mutex::new(VecDeque::new()),
-            window_mappings: Mutex::new(HashMap::new()),
-            next_events: Mutex::new(SmallVec::new()),
-        })))
-    }
-
-    #[inline]
-    fn porcupine_create_window(
-        &self,
-        parent: Option<&Window>,
-        text: String,
-        bounds: Rect<u32>,
-        background: Option<Texture>,
-        is_top_level: bool,
-    ) -> crate::Result<Window> {
-        let cw = crate::WindowInternal::new(self, parent, text, bounds, background, is_top_level)?;
-        let id = cw.id();
-        // hashmap can only store the usize
-        let ex_id = cw.inner_porc_window().hwnd().as_ptr() as *const () as usize;
-
-        let w = Window::from_raw(
-            Arc::new(RwLock::new(cw)),
-            Arc::new(Mutex::new(HashSet::new())),
-            id,
-            self.clone(),
-            None,
-        );
-
-        // add to window mappings
-        let mut wm = self.0.window_mappings.lock();
-        wm.insert(ex_id, w.clone());
-        mem::drop(wm);
-
-        // force a repaint now that it's initialized
-        w.repaint(None)?;
-
-        Ok(w)
-    }
-
-    #[inline]
-    pub(crate) fn porcupine_get_window(
-        &self,
-        hwnd: porcupine::winapi::shared::windef::HWND,
-    ) -> Option<Window> {
-        let wm = self.0.window_mappings.lock();
-        wm.get(&(hwnd as *const () as usize)).map(|w| w.clone())
-    }
-
-    #[inline]
-    pub(crate) fn porcupine_set_next_events(&self, ne: crate::Result<SmallVec<[Event; 2]>>) {
-        let mut l = self.0.next_events.lock();
-        l.push(ne);
-    }
-
-    #[inline]
-    pub(crate) fn porcupine_hold_for_events(&self) -> crate::Result<SmallVec<[Event; 2]>> {
-        // run a single iteration of the message loop
-        if let Some(ref msg) = porcupine::get_message()? {
-            porcupine::translate_message(msg);
-            porcupine::dispatch_message(msg);
-        }
-
-        // drain the next_events variable into the event queue, save for the first element
-        let mut next_events = self.0.next_events.lock();
-        let mut drain = next_events.drain(..).rev();
-        match drain.next() {
-            None => Ok(SmallVec::new()), // just return an empty SmallVec. This is just a stack allocation.
-            Some(evs) => {
-                // if the remaining length is 1 or more, drain it into the event queue
-                if drain.len() > 0 {
-                    let mut evq = self.0.event_queue.lock();
-                    drain.try_for_each::<_, crate::Result<()>>(|nevs| {
-                        nevs?.into_iter().for_each(|e| evq.push_back(e));
-                        Ok(())
-                    })?;
-                }
-
-                evs
-            }
+    pub(crate) fn prc_get_window(&self, ex_id: HWND) -> Option<Window> {
+        match self.0.backend {
+            InternalInstance::Porc(ref p) => p.prc_get_window(ex_id),
+            _ => None,
         }
     }
 }
